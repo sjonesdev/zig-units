@@ -1,6 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
 
+inline fn isNumber(val: anytype) bool {
+    return switch (@typeInfo(@TypeOf(val))) {
+        .int, .float, .comptime_int, .comptime_float => true,
+        else => false,
+    };
+}
+
 /// unicode character symbol
 const DimensionComponent = enum(u21) {
     time = 'T',
@@ -142,8 +149,9 @@ pub const Charge = Current.MultipliedBy(Time);
 pub const Voltage = Power.DividedBy(Current);
 pub const Capacitance = Charge.DividedBy(Voltage);
 pub const Frequency = Dimensionless.DividedBy(Seconds);
-pub const Torque = Mass.MultipliedBy(Length);
+pub const Torque = Energy;
 pub const Momentum = Torque.DividedBy(Time);
+pub const Impulse = Momentum;
 pub const MomentOfInertia = Torque.MultipliedBy(Length);
 pub const Resistance = Voltage.DividedBy(Current);
 
@@ -156,12 +164,12 @@ fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, mul
         const multiplier = multiplier_in;
         const offset = offset_in;
 
-        pub fn ConvertedTo(unit_name: []const u8, unit_abbreviation: []const u8, conversion_factor: comptime_float) type {
+        pub fn ScaledTo(unit_name: []const u8, unit_abbreviation: []const u8, scale_factor: comptime_float) type {
             return Unit(
                 Self.Dimension,
                 unit_name,
                 unit_abbreviation,
-                conversion_factor * multiplier,
+                scale_factor * multiplier,
                 offset * multiplier,
             );
         }
@@ -203,13 +211,24 @@ fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, mul
             return Result;
         }
 
+        pub fn Inverted() type {
+            return Unitless.Per(Self);
+        }
+
         pub fn Named(new_name: []const u8, new_abbreviation: []const u8) type {
-            if (Self.Dimension.isBase()) {
-                @compileError(std.fmt.comptimePrint("Cannot rename base unit {s}", .{name}));
-            }
             return Unit(
                 Self.Dimension,
                 new_name,
+                new_abbreviation,
+                multiplier,
+                offset,
+            );
+        }
+
+        pub fn Abbreviated(new_abbreviation: []const u8) type {
+            return Unit(
+                Self.Dimension,
+                name,
                 new_abbreviation,
                 multiplier,
                 offset,
@@ -262,8 +281,7 @@ fn DerivedUnit(
     );
 }
 
-/// There should only be one base unit per dimension
-fn BaseUnit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8) type {
+pub fn BaseUnit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8) type {
     return Unit(DimensionIn, name_in, abbreviation_in, 1, 0);
 }
 
@@ -298,10 +316,16 @@ fn Quantity(UnitIn: type) type {
         }
 
         pub inline fn times(self: Self, rhs: anytype) Quantity(Self.Unit.Of(@TypeOf(rhs).Unit)) {
+            if (isNumber(rhs)) {
+                return .{ .value = self.value * rhs };
+            }
             return .{ .value = self.value * rhs.in(Self.Unit) };
         }
 
         pub inline fn div(self: Self, rhs: anytype) Quantity(Self.Unit.Per(@TypeOf(rhs).Unit)) {
+            if (isNumber(rhs)) {
+                return .{ .value = self.value / rhs };
+            }
             return .{ .value = self.value / rhs.in(Self.Unit) };
         }
 
@@ -312,12 +336,11 @@ fn Quantity(UnitIn: type) type {
         pub fn fullStr(self: Self, PrintInUnit: type) []const u8 {
             return std.fmt.comptimePrint("{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
         }
-
-        // TODO make abbreviated string fn as well "str"
     };
 }
 
 // Base Units
+// TODO split up units and change all units to be expressed as relations to base units or other units in their file
 pub const Unitless = BaseUnit(Dimensionless, "unitless", "u");
 pub const Seconds = BaseUnit(Time, "seconds", "s");
 pub const Meters = BaseUnit(Length, "meters", "m");
@@ -329,49 +352,71 @@ pub const Candelas = BaseUnit(Luminosity, "candelas", "cd");
 pub const Rotations = BaseUnit(Angle, "rotations", "rot");
 
 // Converted Units
-pub const Yards = Meters.ConvertedTo("yards", "yd", 1.093613);
-pub const Feet = Yards.ConvertedTo("feet", "ft", 3);
-pub const Inches = Feet.ConvertedTo("inches", "in", 12);
-pub const Nanometers = Meters.ConvertedTo("nanometers", "nm", 1_000_000_000);
-pub const Micrometers = Meters.ConvertedTo("micrometers", "μm", 1_000_000);
-pub const Millimeters = Meters.ConvertedTo("millimeters", "mm", 1000);
-pub const Centimeters = Meters.ConvertedTo("centimeters", "cm", 100);
-pub const Decimeter = Meters.ConvertedTo("decimeters", "dm", 10);
-pub const Kilometers = Meters.ConvertedTo("kilometers", "km", 0.001);
+pub const Yards = Meters.ScaledTo("yards", "yd", 1.093613);
+pub const Feet = Yards.ScaledTo("feet", "ft", 3);
+pub const Inches = Feet.ScaledTo("inches", "in", 12);
+pub const Nanometers = Meters.ScaledTo("nanometers", "nm", 1_000_000_000);
+pub const Micrometers = Meters.ScaledTo("micrometers", "μm", 1_000_000);
+pub const Millimeters = Meters.ScaledTo("millimeters", "mm", 1000);
+pub const Centimeters = Meters.ScaledTo("centimeters", "cm", 100);
+pub const Decimeter = Meters.ScaledTo("decimeters", "dm", 10);
+pub const Kilometers = Meters.ScaledTo("kilometers", "km", 0.001);
 pub const Celsius = Kelvin.OffsetTo("degrees celsius", "°C", -272.15);
-pub const Rankine = Kelvin.ConvertedTo("degrees rankine", "°Ra", 1.8);
+pub const Rankine = Kelvin.ScaledTo("degrees rankine", "°Ra", 1.8);
 pub const Fahrenheit = Rankine.OffsetTo("degrees fahrenheit", "°F", -458.67);
-pub const Nanoseconds = Seconds.ConvertedTo("nanoseconds", "ns", 1_000_000_000);
-pub const Microseconds = Seconds.ConvertedTo("microseconds", "μs", 1_000_000);
-pub const Milliseconds = Seconds.ConvertedTo("milliseconds", "ms", 1000);
-pub const Minutes = Seconds.ConvertedTo("minutes", "min", 1 / 60);
-pub const Hours = Minutes.ConvertedTo("hours", "hr", 1 / 60);
-pub const Days = Hours.ConvertedTo("days", "d", 1 / 24);
-pub const MeanMonth = Days.ConvertedTo("months", "mo", 1 / 30.4375);
-pub const MeanYears = Days.ConvertedTo("years", "yr", 1 / 365.2425);
-
-// TODO
-// ohms, milliamps, milliohms, kiloomhms, joules, millijoules, kilojoules, watt
-// kilowatt, milliwat, hp, motor characterization units
+pub const Nanoseconds = Seconds.ScaledTo("nanoseconds", "ns", 1_000_000_000);
+pub const Microseconds = Seconds.ScaledTo("microseconds", "μs", 1_000_000);
+pub const Milliseconds = Seconds.ScaledTo("milliseconds", "ms", 1000);
+pub const Minutes = Seconds.ScaledTo("minutes", "min", 1 / 60);
+pub const Hours = Minutes.ScaledTo("hours", "hr", 1 / 60);
+pub const Days = Hours.ScaledTo("days", "d", 1 / 24);
+pub const MeanMonth = Days.ScaledTo("months", "mo", 1 / 30.4375);
+pub const MeanYears = Days.ScaledTo("years", "yr", 1 / 365.2425);
+pub const Micrograms = Kilograms.ScaledTo("micrograms", "μg", 1_000_000_000);
+pub const Milligrams = Kilograms.ScaledTo("milligrams", "mg", 1_000_000);
+pub const Grams = Kilograms.ScaledTo("grams", "g", 1000);
+pub const Pounds = Kilometers.ScaledTo("pounds", "lbs", 2.204623);
+pub const Radians = Rotations.ScaledTo("radians", "rad", 2 * std.math.pi);
+pub const Degrees = Rotations.ScaledTo("degrees", "°", 360);
 
 // Derived Units
 pub const SquareMeters = Meters.Of(Meters).Named("square meters", "m²");
-pub const MetersPerSecond = Meters.Per(Seconds);
+pub const MetersPerSecond = Meters.Per(Seconds).Named("meters per second", "m/s");
 pub const MetersPerSecondSquared = Meters.Per(Seconds.ToThe(2)).Named("meters per second squared", "m/s²");
-pub const MetersPerSecondCubed = Meters.Per(Seconds.ToThe(3));
-pub const Newtons = Kilograms.Of(MetersPerSecondSquared);
-pub const Volts = Kilograms.Of(SquareMeters).Per(Seconds.ToThe(3)).Per(Amps);
-pub const Ohms = Volts.Per(Amps);
-pub const NewtonMeters = Newtons.Of(Meters);
-pub const KilogramMetersSquared = Kilograms.Of(Meters.ToThe(2));
-pub const NewtonSecond = Kilograms.Of(MetersPerSecond);
-pub const RotationsPerSecond = Rotations.Per(Seconds);
-pub const RotationsPerSecondSquared = Rotations.Per(Seconds.ToThe(2));
-
-// feet per second
-// rot/rad/deg per min/sec/sec^2
+pub const MetersPerSecondCubed = Meters.Per(Seconds.ToThe(3)).Named("meters per second cubed", "m/s³");
+pub const Newtons = Kilograms.Of(MetersPerSecondSquared).Named("newtons", "N");
+pub const Volts = Kilograms.Of(SquareMeters).Per(Seconds.ToThe(3)).Per(Amps).Named("volts", "V");
+pub const Ohms = Volts.Per(Amps).Named("ohms", "Ω");
+pub const NewtonMeters = Newtons.Of(Meters).Named("newton-meters", "Nm");
+pub const KilogramMetersSquared = Kilograms.Of(Meters.ToThe(2)).Named("kilogram meters squared", "kg⋅m²");
+pub const NewtonSeconds = Kilograms.Of(MetersPerSecond).Named("newton-second", "N⋅s");
+pub const KilogramMetersPerSecond = NewtonSeconds.Named("kilogram meters per secon", "kg⋅m/s");
+pub const RotationsPerSecond = Rotations.Per(Seconds).Named("rotations per second", "rot/s");
+pub const RotationsPerSecondSquared = Rotations.Per(Seconds.ToThe(2)).Named("rotations per second squared", "rot/s²");
+pub const Joules = NewtonMeters.Named("Joules", "J");
+pub const Watts = Joules.Per(Seconds).Named("watts", "W");
+pub const Hertz = Unitless.Per(Seconds).Named("hertz", "Hz");
+pub const VoltSecondsPerMeter = Volts.Per(MetersPerSecond).Named("volt seconds per meter", "v⋅s/m"); // linear kV
+pub const VoltSecondsSquaredPerMeter = Volts.Per(MetersPerSecondSquared).Named("volt seconds squared per meter", "v⋅s²/m"); // linear kA
 
 // Converted Derived Units
+pub const Milliohms = Ohms.ScaledTo("milliohms", "mΩ", 1000);
+pub const Kiloohms = Ohms.ScaledTo("kiloohms", "kΩ", 0.001);
+pub const Millijoules = Joules.ScaledTo("millijoules", "mJ", 1000);
+pub const Kilojoules = Joules.ScaledTo("kilojoules", "kJ", 0.001);
+pub const Milliwatt = Watts.ScaledTo("milliwaitts", "mW", 1000);
+pub const Kilowatt = Watts.ScaledTo("kilowatts", "kW", 0.001);
+pub const Horsepower = Watts.ScaledTo("horsepower", "hp", 745.7);
+pub const FeetPerSecond = Feet.Per(Seconds).Named("feet per second", "ft/s");
+pub const FeetPerSecondSquared = FeetPerSecond.Per(Seconds).Named("feet per second squared", "ft/s²");
+pub const RotationsPerMinute = Rotations.Per(Minutes).Named("rotations per minute", "rot/min");
+pub const RotationsPerMinuteSquared = RotationsPerMinute.Per(Minutes).Named("rotations per minute squared", "rot/min²");
+pub const RadiansPerSecond = Radians.Per(Seconds).Named("radians per second", "rad/s");
+pub const RadiansPerSecondSquared = RadiansPerSecond.Per(Seconds).Named("radians per second squared", "rad/s²");
+pub const DegreesPerSecond = Degrees.Per(Seconds).Named("degrees per second", "deg/s");
+pub const DegreesPerSecondSquared = DegreesPerSecond.Per(Seconds).Named("degrees per second squared", "deg/s²");
+pub const VoltSecondsPerRadian = Volts.Per(RadiansPerSecond).Named("volt seconds per radian", "v⋅s/rad"); // angular kV
+pub const VoltSecondsSquaredPerRadian = Volts.Per(RadiansPerSecondSquared).Named("volt seconds squared per radian", "v⋅s²/rad"); // angular kA
 
 const tol = 0.00001;
 test "Create quantities" {
@@ -437,9 +482,4 @@ test "Dividing dimensions" {
         mps.in(Meters.Per(Seconds)),
         tol,
     );
-}
-
-test "functionality" {
-    std.debug.print("{s}\n", .{MetersPerSecondSquared.of(2).str(MetersPerSecondSquared)});
-    std.debug.print("{s}\n", .{Volts.name});
 }
