@@ -235,7 +235,12 @@ fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, mul
             );
         }
 
-        pub inline fn of(value: comptime_float) Quantity(Self) {
+        pub inline fn of(
+            value: anytype,
+        ) Quantity(
+            Self,
+            if (@typeInfo(@TypeOf(value)) == .comptime_int) comptime_float else @TypeOf(value),
+        ) {
             return .{ .value = value };
         }
     };
@@ -285,57 +290,97 @@ pub fn BaseUnit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const
     return Unit(DimensionIn, name_in, abbreviation_in, 1, 0);
 }
 
-fn Quantity(UnitIn: type) type {
+fn Quantity(UnitIn: type, ValueTypeIn: type) type {
     return struct {
         const Self = @This();
         const Unit = UnitIn;
+        const ValueType = ValueTypeIn;
 
-        value: comptime_float,
+        value: ValueType,
 
-        inline fn baseValue(self: Self) comptime_float {
+        inline fn baseValue(self: Self) ValueType {
             return (self.value - Self.Unit.offset) / Self.Unit.multiplier;
         }
 
         // TODO output float from here and make a "to" method instead for converting internal representation
-        inline fn in(self: Self, RightUnit: type) comptime_float {
-            return @mulAdd(comptime_float, self.baseValue(), RightUnit.multiplier, RightUnit.offset);
+        inline fn in(self: Self, RightUnit: type) ValueType {
+            return @mulAdd(ValueType, self.baseValue(), RightUnit.multiplier, RightUnit.offset);
         }
 
-        pub inline fn plus(self: Self, rhs: anytype) Self { // if I changed the quantities to be defined by their base units I could define the rhs type more concretely as Self, that would also limit type cardinality and potentially improve compile times
+        pub inline fn plus(
+            self: Self,
+            rhs: anytype,
+        ) Quantity(Self.Unit, @TypeOf(self.value + rhs.in(Self.Unit))) {
+            // TODO handle pointers to quantities (either by literally handling them or providing a custom error message)
             if (!Self.Unit.Dimension.equals(@TypeOf(rhs).Unit.Dimension)) {
                 @compileError("Adding different dimensions in not allowed");
             }
             return .{ .value = self.value + rhs.in(Self.Unit) };
         }
+        // if (ValueType == comptime_float) @TypeOf(rhs).ValueType else ValueType,
 
-        pub inline fn minus(self: Self, rhs: anytype) Self {
+        pub inline fn minus(
+            self: Self,
+            rhs: anytype,
+        ) Quantity(Self.Unit, @TypeOf(self.value + rhs.in(Self.Unit))) {
             if (!Self.Unit.Dimension.equals(@TypeOf(rhs).Unit.Dimension)) {
                 @compileError("Subtracting different dimensions in not allowed");
             }
             return .{ .value = self.value - rhs.in(Self.Unit) };
         }
 
-        pub inline fn times(self: Self, rhs: anytype) Quantity(Self.Unit.Of(@TypeOf(rhs).Unit)) {
+        pub inline fn times(
+            self: Self,
+            rhs: anytype,
+        ) Quantity(Self.Unit.Of(@TypeOf(rhs).Unit), @TypeOf(self.value * rhs.in(Self.Unit))) {
             if (isNumber(rhs)) {
                 return .{ .value = self.value * rhs };
             }
             return .{ .value = self.value * rhs.in(Self.Unit) };
         }
 
-        pub inline fn div(self: Self, rhs: anytype) Quantity(Self.Unit.Per(@TypeOf(rhs).Unit)) {
+        pub inline fn div(
+            self: Self,
+            rhs: anytype,
+        ) Quantity(Self.Unit.Per(@TypeOf(rhs).Unit), @TypeOf(self.value / rhs.in(Self.Unit))) {
             if (isNumber(rhs)) {
                 return .{ .value = self.value / rhs };
             }
             return .{ .value = self.value / rhs.in(Self.Unit) };
         }
 
+        /// for comptime
         pub fn str(self: Self, PrintInUnit: type) []const u8 {
-            return std.fmt.comptimePrint("{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
+            comptime {
+                return std.fmt.comptimePrint("{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
+            }
         }
 
+        /// for comptime
         pub fn fullStr(self: Self, PrintInUnit: type) []const u8 {
-            return std.fmt.comptimePrint("{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+            comptime {
+                return std.fmt.comptimePrint("{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+            }
         }
+
+        /// TODO print in scientific notation if possible upon no space left error (or maybe try to detect this with heuristic)
+        pub fn bufStr(self: Self, PrintInUnit: type, buf: []u8) std.fmt.BufPrintError![]const u8 {
+            return std.fmt.bufPrint(buf, "{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
+        }
+
+        pub fn bufFullStr(self: Self, PrintInUnit: type, buf: []u8) std.fmt.BufPrintError![]const u8 {
+            return std.fmt.bufPrint(buf, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+        }
+
+        pub fn allocStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) std.fmt.AllocPrintError![]const u8 {
+            return std.fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+        }
+
+        pub fn allocFullStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) std.fmt.AllocPrintError![]const u8 {
+            return std.fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+        }
+
+        // TODO create function with built in buffer
     };
 }
 
@@ -482,4 +527,33 @@ test "Dividing dimensions" {
         mps.in(Meters.Per(Seconds)),
         tol,
     );
+}
+
+test "Runtime arithmetic" {
+    var m1 = try std.testing.allocator.create(Quantity(Meters, f64));
+    m1.* = .{ .value = 100 };
+    defer std.testing.allocator.destroy(m1);
+    var buf: [256]u8 = undefined;
+    std.debug.print("{s}\n", .{(try m1.bufStr(Meters, &buf))});
+
+    const m2 = Meters.of(10);
+    const m3 = m1.plus(m2);
+    std.debug.print("{s}\n", .{(try m3.bufStr(Meters, &buf))});
+    const m4 = m2.plus(m1.*);
+    std.debug.print("{s}\n", .{(try m4.bufStr(Meters, &buf))});
+
+    const m5 = try std.testing.allocator.create(Quantity(Meters, f32));
+    defer std.testing.allocator.destroy(m5);
+    m5.* = .{ .value = 69 };
+    const m6 = m5.plus(m2);
+    std.debug.print("{s}\n", .{(try m6.bufStr(Meters, &buf))});
+
+    const m7 = m2.plus(m5.*);
+    std.debug.print("{s}\n", .{(try m7.bufStr(Meters, &buf))});
+
+    const m8 = m5.plus(m1.*);
+    std.debug.print("{s}\n", .{(try m8.bufStr(Meters, &buf))});
+
+    const m9 = m1.plus(m5.*);
+    std.debug.print("{s}\n", .{(try m9.bufStr(Meters, &buf))});
 }
