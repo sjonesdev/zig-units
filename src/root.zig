@@ -1,11 +1,15 @@
 const std = @import("std");
 const testing = std.testing;
 
-inline fn isNumber(val: anytype) bool {
-    return switch (@typeInfo(@TypeOf(val))) {
+inline fn isNumType(T: type) bool {
+    return switch (@typeInfo(T)) {
         .int, .float, .comptime_int, .comptime_float => true,
         else => false,
     };
+}
+
+inline fn isNumber(val: anytype) bool {
+    return isNumType(@TypeOf(val));
 }
 
 /// unicode character symbol
@@ -155,14 +159,19 @@ pub const Impulse = Momentum;
 pub const MomentOfInertia = Torque.MultipliedBy(Length);
 pub const Resistance = Voltage.DividedBy(Current);
 
+/// DimensionIn - dimension of unit
+/// name_in - display name of unit
+/// abbreviation_in - display abbreviation of unit
+/// multiplier_in - the value the unit must be multiplied by to convert to it's base unit
+/// offset_in - the value that must be added to the unit (after being multiplied) to convert to it's base unit
 fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, multiplier_in: comptime_float, offset_in: comptime_float) type {
     return struct {
         const Self = @This();
         const Dimension = DimensionIn;
         pub const name = name_in;
         pub const abbreviation = abbreviation_in;
-        const multiplier = multiplier_in;
-        const offset = offset_in;
+        const multiplier: comptime_float = multiplier_in;
+        const offset: comptime_float = offset_in;
 
         pub fn ScaledTo(unit_name: []const u8, unit_abbreviation: []const u8, scale_factor: comptime_float) type {
             return Unit(
@@ -184,6 +193,7 @@ fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, mul
             );
         }
 
+        /// Unit * RightUnit
         pub fn Of(RightUnit: type) type { // maybe rename to Dot?
             return DerivedUnit(
                 @This(),
@@ -192,6 +202,7 @@ fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, mul
             );
         }
 
+        /// Unit / RightUnit
         pub fn Per(RightUnit: type) type {
             return DerivedUnit(
                 @This(),
@@ -200,8 +211,14 @@ fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, mul
             );
         }
 
+        /// Inverse, Unit^(-1)
+        pub fn Inv() type {
+            return Unitless.Per(Self);
+        }
+
+        /// Unit^(power), power > 0
         pub fn ToThe(power: comptime_int) type {
-            if (power < 0) {
+            if (power <= 0) {
                 @compileError("ToThe only supports integers >0");
             }
             var Result = Self;
@@ -211,8 +228,27 @@ fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, mul
             return Result;
         }
 
-        pub fn Inverted() type {
-            return Unitless.Per(Self);
+        /// Unit^(-power), power > 0
+        pub fn Root(power: comptime_int) type {
+            if (power <= 0) {
+                @compileError("Root only supports integers >0");
+            }
+            var Result = Inv();
+            for (1..power) |_| {
+                Result = Result.Per(Self);
+            }
+            return Result;
+        }
+
+        /// Unit^(power)
+        pub fn Pow(power: comptime_int) type {
+            if (power == 0) {
+                return Unitless;
+            } else if (power < 0) {
+                return Root(@abs(power));
+            } else {
+                return ToThe(power);
+            }
         }
 
         pub fn Named(new_name: []const u8, new_abbreviation: []const u8) type {
@@ -233,6 +269,10 @@ fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, mul
                 multiplier,
                 offset,
             );
+        }
+
+        pub inline fn equals(OtherUnit: type) bool {
+            return Self.multiplier == OtherUnit.multiplier and Self.offset == OtherUnit.offset;
         }
 
         pub inline fn of(
@@ -270,13 +310,6 @@ fn DerivedUnit(
         },
     };
 
-    if (Dim.isBase()) {
-        @compileError(std.fmt.comptimePrint(
-            "Cannot derive a base unit: ({s}) {s} ({s})",
-            .{ LeftHandUnit.name, @tagName(operation), RightHandUnit.name },
-        ));
-    }
-
     return Unit(
         Dim,
         name,
@@ -289,6 +322,87 @@ fn DerivedUnit(
 pub fn BaseUnit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8) type {
     return Unit(DimensionIn, name_in, abbreviation_in, 1, 0);
 }
+inline fn RoughlySameSizedFloatAsInt(int_info: std.builtin.Type.Int) type {
+    if (int_info.bits <= 16) {
+        return f16;
+    } else if (int_info.bits <= 32) {
+        return f32;
+    } else if (int_info.bits <= 64) {
+        return f64;
+    } else if (int_info.bits <= 80) {
+        return f80;
+    }
+    return f128;
+}
+inline fn ResolveValueType(LeftType: type, RightType: type) type {
+    const linfo = @typeInfo(LeftType);
+    const rinfo = @typeInfo(RightType);
+    const left_val: LeftType = 0;
+    const right_val: RightType = 0;
+
+    if (linfo == .int and rinfo == .comptime_float) {
+        const left_coerced = @as(
+            RoughlySameSizedFloatAsInt(linfo.int),
+            @floatFromInt(left_val),
+        );
+        return @TypeOf(left_coerced, right_val);
+    } else if (linfo == .comptime_float and rinfo == .int) {
+        const right_coerced = @as(
+            RoughlySameSizedFloatAsInt(rinfo.int),
+            @floatFromInt(right_val),
+        );
+        return @TypeOf(left_val, right_coerced);
+    }
+    return @TypeOf(left_val, right_val);
+}
+
+const Op = enum {
+    add,
+    sub,
+    mul,
+    div,
+};
+inline fn arithmetic(T: type, l: anytype, r: anytype, op: Op) T {
+    return switch (op) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => l / r,
+    };
+}
+inline fn coerciveArithmetic(left_val: anytype, right_val: anytype, operation: Op) ResolveValueType(@TypeOf(left_val), @TypeOf(right_val)) {
+    const ResultType = ResolveValueType(@TypeOf(left_val), @TypeOf(right_val));
+    const LeftType = @TypeOf(left_val);
+    const RightType = @TypeOf(right_val);
+    const linfo = @typeInfo(LeftType);
+    const rinfo = @typeInfo(RightType);
+    if (linfo == .int and (rinfo == .comptime_float or rinfo == .float)) {
+        return arithmetic(
+            ResultType,
+            @as(
+                RoughlySameSizedFloatAsInt(linfo.int),
+                @floatFromInt(left_val),
+            ),
+            right_val,
+            operation,
+        );
+    } else if ((linfo == .comptime_float or linfo == .float) and rinfo == .int) {
+        return arithmetic(
+            ResultType,
+            left_val,
+            @as(
+                RoughlySameSizedFloatAsInt(rinfo.int),
+                @floatFromInt(right_val),
+            ),
+            operation,
+        );
+    } else return arithmetic(
+        ResultType,
+        left_val,
+        right_val,
+        operation,
+    );
+}
 
 fn Quantity(UnitIn: type, ValueTypeIn: type) type {
     return struct {
@@ -298,56 +412,171 @@ fn Quantity(UnitIn: type, ValueTypeIn: type) type {
 
         value: ValueType,
 
-        inline fn baseValue(self: Self) ValueType {
-            return (self.value - Self.Unit.offset) / Self.Unit.multiplier;
+        inline fn baseValue(self: Self) ResolveValueType(ValueType, comptime_float) {
+            // check if this is base unit
+            // TODO @mulAdd?
+            return coerciveArithmetic(
+                self.value,
+                Self.Unit.multiplier,
+                .mul,
+            ) + Self.Unit.offset;
         }
 
-        // TODO output float from here and make a "to" method instead for converting internal representation
-        inline fn in(self: Self, RightUnit: type) ValueType {
-            return @mulAdd(ValueType, self.baseValue(), RightUnit.multiplier, RightUnit.offset);
+        /// Converts this quantity's value to OtherUnit and returns the resulting Quantity
+        inline fn in(self: Self, OtherUnit: type) if (Self.Unit.equals(OtherUnit)) ValueType else ResolveValueType(
+            ValueType,
+            @TypeOf(self.baseValue()),
+        ) {
+            if (Self.Unit.equals(OtherUnit)) return self.value;
+            const base_value = self.baseValue();
+            return (base_value - OtherUnit.offset) / OtherUnit.multiplier;
         }
 
+        /// Converts this quantity's value to OtherUnit and returns the resulting value
+        pub inline fn to(self: Self, OtherUnit: type) Quantity(
+            OtherUnit,
+            ResolveValueType(
+                ValueType,
+                @TypeOf(self.baseValue()),
+            ),
+        ) {
+            return .{ .value = self.in(OtherUnit) };
+        }
+
+        /// Converts this quantity's value to a value of type T and returns
+        /// the resulting Quantity
+        ///
+        /// This will allow conversion from integers to floats as well, but
+        /// not from floats to integers
+        pub inline fn as(self: Self, T: type) Quantity(Self.Unit, T) {
+            if (@typeInfo(ValueType) == .int) {
+                return .{ .value = @as(T, @floatFromInt(self.value)) };
+            }
+            return .{ .value = @as(T, self.value) };
+        }
+
+        // TODO support integer quantities by automatically calling @floatFromInt where appropriate
         pub inline fn plus(
             self: Self,
             rhs: anytype,
-        ) Quantity(Self.Unit, @TypeOf(self.value + rhs.in(Self.Unit))) {
+        ) Quantity(
+            Self.Unit,
+            ResolveValueType(
+                ValueType,
+                @TypeOf(rhs.in(Self.Unit)),
+            ),
+        ) {
+            const Rhs = @TypeOf(rhs);
             // TODO handle pointers to quantities (either by literally handling them or providing a custom error message)
-            if (!Self.Unit.Dimension.equals(@TypeOf(rhs).Unit.Dimension)) {
+            if (!Self.Unit.Dimension.equals(Rhs.Unit.Dimension)) {
                 @compileError("Adding different dimensions in not allowed");
             }
-            return .{ .value = self.value + rhs.in(Self.Unit) };
+            const right_val = if (Self.Unit.equals(Rhs.Unit)) rhs.value else rhs.in(Self.Unit);
+            return .{ .value = coerciveArithmetic(
+                self.value,
+                right_val,
+                .add,
+            ) };
         }
-        // if (ValueType == comptime_float) @TypeOf(rhs).ValueType else ValueType,
 
         pub inline fn minus(
             self: Self,
             rhs: anytype,
-        ) Quantity(Self.Unit, @TypeOf(self.value + rhs.in(Self.Unit))) {
-            if (!Self.Unit.Dimension.equals(@TypeOf(rhs).Unit.Dimension)) {
-                @compileError("Subtracting different dimensions in not allowed");
+        ) Quantity(Self.Unit, ResolveValueType(
+            ValueType,
+            @TypeOf(rhs.in(Self.Unit)),
+        )) {
+            const Rhs = @TypeOf(rhs);
+            if (!Self.Unit.Dimension.equals(Rhs.Unit.Dimension)) {
+                @compileError("Adding different dimensions in not allowed");
             }
-            return .{ .value = self.value - rhs.in(Self.Unit) };
+            const right_val = if (Self.Unit.multiplier == Rhs.Unit.multiplier and
+                Self.Unit.offset == Rhs.Unit.offset) rhs.value else rhs.in(Self.Unit);
+            return .{ .value = coerciveArithmetic(
+                self.value,
+                right_val,
+                .sub,
+            ) };
         }
 
         pub inline fn times(
             self: Self,
             rhs: anytype,
-        ) Quantity(Self.Unit.Of(@TypeOf(rhs).Unit), @TypeOf(self.value * rhs.in(Self.Unit))) {
-            if (isNumber(rhs)) {
-                return .{ .value = self.value * rhs };
-            }
-            return .{ .value = self.value * rhs.in(Self.Unit) };
+        ) Quantity(
+            Self.Unit.Of(@TypeOf(rhs).Unit),
+            ResolveValueType(
+                ValueType,
+                if (isNumType(@TypeOf(rhs))) @TypeOf(rhs) else @TypeOf(rhs.in(Self.Unit)),
+            ),
+        ) {
+            const right_val = if (isNumber(rhs)) blk: {
+                break :blk rhs;
+            } else rhs.in(Self.Unit);
+            return .{ .value = coerciveArithmetic(
+                self.value,
+                right_val,
+                .mul,
+            ) };
         }
 
         pub inline fn div(
             self: Self,
             rhs: anytype,
-        ) Quantity(Self.Unit.Per(@TypeOf(rhs).Unit), @TypeOf(self.value / rhs.in(Self.Unit))) {
-            if (isNumber(rhs)) {
-                return .{ .value = self.value / rhs };
-            }
-            return .{ .value = self.value / rhs.in(Self.Unit) };
+        ) Quantity(
+            Self.Unit.Per(@TypeOf(rhs).Unit),
+            ResolveValueType(
+                ValueType,
+                if (isNumType(@TypeOf(rhs))) @TypeOf(rhs) else @TypeOf(rhs.in(Self.Unit)),
+            ),
+        ) {
+            const right_val = if (isNumber(rhs)) blk: {
+                break :blk rhs;
+            } else rhs.in(Self.Unit);
+            return .{ .value = coerciveArithmetic(
+                self.value,
+                right_val,
+                .div,
+            ) };
         }
+
+        pub inline fn abs(self: Self) Quantity(
+            Self.Unit,
+            Self.ValueType,
+        ) {
+            return .{ .value = @abs(self.value) };
+        }
+
+        /// Uses std.math.pow for f32, f64. Otherwise, multiplies manually, not
+        /// handling special cases.
+        pub inline fn pow(self: Self, power: ValueType) Quantity(
+            Self.Unit.Pow(power),
+            ValueType,
+        ) {
+            if (ValueType == f32 or ValueType == f64) {
+                return .{ .value = std.math.pow(ValueType, self.value, power) };
+            } else if (ValueType == comptime_float) {
+                comptime {
+                    var new_val: comptime_float = 1;
+                    for (0..@abs(power)) |_| {
+                        new_val *= self.value;
+                    }
+                    return .{ .value = if (power < 0) 1.0 / new_val else new_val };
+                }
+            }
+            var new_val: ValueType = 1;
+            for (0..@abs(power)) |_| {
+                new_val *= self.value;
+            }
+            return .{ .value = if (power < 0) 1.0 / new_val else new_val };
+        }
+
+        pub inline fn inv(self: Self) Quantity(Self.Unit.Inv(), ValueType) {
+            return self.pow(-1);
+        }
+
+        // pub inline fn mod(self: Self, rhs: anytype) Quantity(Self.Unit, ValueType) {
+
+        // }
 
         /// for comptime
         pub fn str(self: Self, PrintInUnit: type) []const u8 {
@@ -379,8 +608,6 @@ fn Quantity(UnitIn: type, ValueTypeIn: type) type {
         pub fn allocFullStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) std.fmt.AllocPrintError![]const u8 {
             return std.fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
         }
-
-        // TODO create function with built in buffer
     };
 }
 
@@ -397,8 +624,8 @@ pub const Candelas = BaseUnit(Luminosity, "candelas", "cd");
 pub const Rotations = BaseUnit(Angle, "rotations", "rot");
 
 // Converted Units
-pub const Yards = Meters.ScaledTo("yards", "yd", 1.093613);
-pub const Feet = Yards.ScaledTo("feet", "ft", 3);
+pub const Yards = Feet.ScaledTo("yards", "yd", 1 / 12);
+pub const Feet = Meters.ScaledTo("feet", "ft", 0.3048);
 pub const Inches = Feet.ScaledTo("inches", "in", 12);
 pub const Nanometers = Meters.ScaledTo("nanometers", "nm", 1_000_000_000);
 pub const Micrometers = Meters.ScaledTo("micrometers", "μm", 1_000_000);
@@ -440,7 +667,7 @@ pub const RotationsPerSecond = Rotations.Per(Seconds).Named("rotations per secon
 pub const RotationsPerSecondSquared = Rotations.Per(Seconds.ToThe(2)).Named("rotations per second squared", "rot/s²");
 pub const Joules = NewtonMeters.Named("Joules", "J");
 pub const Watts = Joules.Per(Seconds).Named("watts", "W");
-pub const Hertz = Unitless.Per(Seconds).Named("hertz", "Hz");
+pub const Hertz = Seconds.Inv().Named("hertz", "Hz");
 pub const VoltSecondsPerMeter = Volts.Per(MetersPerSecond).Named("volt seconds per meter", "v⋅s/m"); // linear kV
 pub const VoltSecondsSquaredPerMeter = Volts.Per(MetersPerSecondSquared).Named("volt seconds squared per meter", "v⋅s²/m"); // linear kA
 
@@ -463,16 +690,18 @@ pub const DegreesPerSecondSquared = DegreesPerSecond.Per(Seconds).Named("degrees
 pub const VoltSecondsPerRadian = Volts.Per(RadiansPerSecond).Named("volt seconds per radian", "v⋅s/rad"); // angular kV
 pub const VoltSecondsSquaredPerRadian = Volts.Per(RadiansPerSecondSquared).Named("volt seconds squared per radian", "v⋅s²/rad"); // angular kA
 
-const tol = 0.00001;
+// recommended by std lib
+const f128_tol = std.math.sqrt(std.math.floatEps(f128));
+const f16_tol = std.math.sqrt(std.math.floatEps(f16));
 test "Create quantities" {
     try testing.expectEqual(Meters.of(3).value, 3);
 }
 
 test "Converting units" {
-    try testing.expectApproxEqAbs(
+    try testing.expectApproxEqRel(
         @as(f128, 0.9144),
         Feet.of(3).in(Meters),
-        tol,
+        f128_tol,
     );
 }
 
@@ -484,10 +713,10 @@ test "Adding and subtracting same units" {
 }
 
 test "Adding and subtracting same dimensions" {
-    try testing.expectApproxEqAbs(
+    try testing.expectApproxEqRel(
         @as(f128, -0.0856),
         Feet.of(3).minus(Meters.of(1)).in(Meters),
-        tol,
+        f128_tol,
     );
 }
 
@@ -503,10 +732,10 @@ test "Multiplying dimensions" {
         0,
         0,
     )));
-    try testing.expectApproxEqAbs(
+    try testing.expectApproxEqRel(
         @as(f128, 10),
         mkg.in(Meters.Of(Kilograms)),
-        tol,
+        f128_tol,
     );
 }
 
@@ -522,38 +751,68 @@ test "Dividing dimensions" {
         0,
         0,
     )));
-    try testing.expectApproxEqAbs(
+    try testing.expectApproxEqRel(
         @as(f128, 3.5),
         mps.in(Meters.Per(Seconds)),
-        tol,
+        f128_tol,
     );
 }
 
 test "Runtime arithmetic" {
-    var m1 = try std.testing.allocator.create(Quantity(Meters, f64));
-    m1.* = .{ .value = 100 };
-    defer std.testing.allocator.destroy(m1);
-    var buf: [256]u8 = undefined;
-    std.debug.print("{s}\n", .{(try m1.bufStr(Meters, &buf))});
+    const a = Meters.of(2);
+    const b = Meters.of(@as(i7, 20));
+    const c = Meters.of(@as(f32, 34));
+    const d = Seconds.of(@as(i64, 3));
 
-    const m2 = Meters.of(10);
-    const m3 = m1.plus(m2);
-    std.debug.print("{s}\n", .{(try m3.bufStr(Meters, &buf))});
-    const m4 = m2.plus(m1.*);
-    std.debug.print("{s}\n", .{(try m4.bufStr(Meters, &buf))});
-
-    const m5 = try std.testing.allocator.create(Quantity(Meters, f32));
-    defer std.testing.allocator.destroy(m5);
-    m5.* = .{ .value = 69 };
-    const m6 = m5.plus(m2);
-    std.debug.print("{s}\n", .{(try m6.bufStr(Meters, &buf))});
-
-    const m7 = m2.plus(m5.*);
-    std.debug.print("{s}\n", .{(try m7.bufStr(Meters, &buf))});
-
-    const m8 = m5.plus(m1.*);
-    std.debug.print("{s}\n", .{(try m8.bufStr(Meters, &buf))});
-
-    const m9 = m1.plus(m5.*);
-    std.debug.print("{s}\n", .{(try m9.bufStr(Meters, &buf))});
+    try testing.expectEqual(a.plus(b.as(f32)), b.as(f32).plus(a));
+    try testing.expectEqual(a.minus(c).abs(), c.minus(a));
+    try testing.expectEqual(b.plus(c), c.plus(b));
+    try testing.expectEqual(
+        a.times(d).in(Meters.Of(Seconds)),
+        d.times(a).in(Meters.Of(Seconds)),
+    );
 }
+
+test "Runtime division" {
+    const a = Radians.of(@as(i6, 20));
+    const b = Newtons.of(@as(f16, 7));
+    try testing.expectApproxEqRel(
+        a.div(b).in(Radians.Per(Newtons)),
+        b.inv().times(a).in(Radians.Per(Newtons)),
+        f16_tol,
+    );
+
+    const c = Newtons.of(@as(f128, 9));
+    try testing.expectApproxEqRel(
+        a.as(f128).div(c).in(Radians.Per(Newtons)),
+        c.inv().times(a.as(f128)).in(Radians.Per(Newtons)),
+        f128_tol,
+    );
+}
+
+test "Pow" {
+    const val = Radians.of(10);
+    try testing.expectEqual(val.times(val), val.pow(2));
+
+    const val2 = Watts.of(@as(f64, 17));
+    try testing.expectEqual(val2.times(val2), val2.pow(2));
+}
+
+test "Units maintain identity and inverse properties of multiplication" {
+    // there are, of course, absurdly large/precise values where this does not hold
+    // in those cases, floating point arithmetic is likely not appropriate anyways
+    const a = meters(1592287654567656789765787689878989876543234567654345678987654567345676543248472).div(Seconds.of(@as(f32, 2.123425))).times(Seconds.of(0.098765434569999999999997865435678654679999999999999978));
+    try std.testing.expect(Length.equals(@TypeOf(a).Unit.Dimension));
+    try std.testing.expect(Meters.equals(@TypeOf(a).Unit));
+
+    const b = radians(123456789).times(meters(@as(f32, 0.123456789654))).div(meters(34253));
+    try std.testing.expect(Angle.equals(@TypeOf(b).Unit.Dimension));
+    try std.testing.expect(Radians.equals(@TypeOf(b).Unit));
+
+    const c = radians(123456789).times(meters(@as(i32, 5))).div(meters(34253));
+    try std.testing.expect(Angle.equals(@TypeOf(c).Unit.Dimension));
+    try std.testing.expect(Radians.equals(@TypeOf(c).Unit));
+}
+
+const meters = &Meters.of;
+const radians = &Radians.of;
