@@ -1,0 +1,206 @@
+const std = @import("std");
+const Unitless = @import("unit.zig").Unitless;
+
+inline fn isNumType(T: type) bool {
+    return switch (@typeInfo(T)) {
+        .int, .float, .comptime_int, .comptime_float => true,
+        else => false,
+    };
+}
+
+inline fn isNumber(val: anytype) bool {
+    return isNumType(@TypeOf(val));
+}
+
+pub fn Quantity(UnitIn: type, ValueTypeIn: type) type {
+    return struct {
+        const Self = @This();
+        const ValueType = ValueTypeIn;
+        pub const Unit = UnitIn;
+
+        /// A value of type `Self.ValueType` and unit `Self.Unit`.
+        /// It is recommended to use `in()` instead of accessing this
+        /// value directly for clarity.
+        value: ValueType,
+
+        inline fn baseValue(self: Self) @TypeOf(self.value, 0.0) {
+            return @mulAdd(
+                @TypeOf(self.value, 0.0),
+                self.value,
+                Self.Unit.multiplier,
+                Self.Unit.offset,
+            );
+        }
+
+        /// Converts this quantity's value to OtherUnit and returns the resulting Quantity
+        pub inline fn in(
+            self: Self,
+            OtherUnit: type,
+        ) if (Self.Unit.equals(OtherUnit)) ValueType else @TypeOf(self.value, 0.0) {
+            if (Self.Unit.equals(OtherUnit)) return self.value;
+            const base_value = self.baseValue();
+            return (base_value - OtherUnit.offset) / OtherUnit.multiplier;
+        }
+
+        /// Converts this quantity's value to OtherUnit and returns the resulting value
+        pub inline fn to(
+            self: Self,
+            OtherUnit: type,
+        ) Quantity(
+            OtherUnit,
+            if (Self.Unit.equals(OtherUnit)) ValueType else @TypeOf(self.value, 0.0),
+        ) {
+            return .{ .value = self.in(OtherUnit) };
+        }
+
+        /// Converts this quantity's value to a value of type T and returns
+        /// the resulting Quantity
+        ///
+        /// This will allow conversion from integers to floats as well, but
+        /// not from floats to integers
+        pub inline fn as(self: Self, T: type) Quantity(Self.Unit, T) {
+            if (@typeInfo(ValueType) == .int) {
+                return .{ .value = @as(T, @floatFromInt(self.value)) };
+            }
+            return .{ .value = @as(T, self.value) };
+        }
+
+        // TODO support integer quantities by automatically calling @floatFromInt where appropriate
+        pub inline fn plus(
+            self: Self,
+            rhs: anytype,
+        ) Quantity(
+            Self.Unit,
+            @TypeOf(
+                self.value,
+                if (Self.Unit.equals(@TypeOf(rhs).Unit)) rhs.value else rhs.in(Self.Unit),
+            ),
+        ) {
+            const Rhs = @TypeOf(rhs);
+            // TODO handle pointers to quantities (either by literally handling them or providing a custom error message)
+            if (!Self.Unit.Dimension.equals(Rhs.Unit.Dimension)) {
+                @compileError("Adding different dimensions in not allowed");
+            }
+            const right_val = if (Self.Unit.equals(Rhs.Unit)) rhs.value else rhs.in(Self.Unit);
+            return .{ .value = self.value + right_val };
+        }
+
+        pub inline fn minus(
+            self: Self,
+            rhs: anytype,
+        ) Quantity(
+            Self.Unit,
+            @TypeOf(
+                self.value,
+                if (Self.Unit.equals(@TypeOf(rhs).Unit)) rhs.value else rhs.in(Self.Unit),
+            ),
+        ) {
+            const Rhs = @TypeOf(rhs);
+            if (!Self.Unit.Dimension.equals(Rhs.Unit.Dimension)) {
+                @compileError("Adding different dimensions in not allowed");
+            }
+            const right_val = if (Self.Unit.multiplier == Rhs.Unit.multiplier and
+                Self.Unit.offset == Rhs.Unit.offset) rhs.value else rhs.in(Self.Unit);
+            return .{ .value = self.value - right_val };
+        }
+
+        /// Multiplies two quantities. Note that normal multiplication rules apply here.
+        pub inline fn times(
+            self: Self,
+            rhs: anytype,
+        ) Quantity(
+            Self.Unit.Of(@TypeOf(rhs).Unit),
+            @TypeOf(
+                self.value,
+                if (isNumType(@TypeOf(rhs))) rhs else if (Self.Unit.equals(@TypeOf(rhs).Unit)) rhs.value else rhs.in(Self.Unit),
+            ),
+        ) {
+            const right_val = if (isNumber(rhs)) blk: {
+                break :blk rhs;
+            } else rhs.in(Self.Unit);
+            return .{ .value = self.value * right_val };
+        }
+
+        /// Divides two quantities. Note that normal division rules apply here,
+        /// meaning if you divide two integer quantities, integer division will
+        /// be performed. Additionally, ambiguous coercions will error out.
+        pub inline fn div(
+            self: Self,
+            rhs: anytype,
+        ) Quantity(
+            Self.Unit.Per(@TypeOf(rhs).Unit),
+            @TypeOf(
+                self.value,
+                if (isNumType(@TypeOf(rhs))) rhs else if (Self.Unit.equals(@TypeOf(rhs).Unit)) rhs.value else rhs.in(Self.Unit),
+            ),
+        ) {
+            const right_val = if (isNumber(rhs)) blk: {
+                break :blk rhs;
+            } else rhs.in(Self.Unit);
+            return .{ .value = self.value / right_val };
+        }
+
+        /// see `@abs`
+        pub inline fn abs(self: Self) Quantity(
+            Self.Unit,
+            Self.ValueType,
+        ) {
+            return .{ .value = @abs(self.value) };
+        }
+
+        /// See `std.math.pow`
+        pub inline fn pow(self: Self, power: ValueType) Quantity(
+            Self.Unit.Pow(power),
+            ValueType,
+        ) {
+            return .{ .value = std.math.pow(ValueType, self.value, power) };
+        }
+
+        /// 1 / Quantity
+        pub inline fn inv(self: Self) Quantity(Self.Unit.Inv(), ValueType) {
+            return Unitless.of(1).div(self);
+        }
+
+        /// for comptime
+        pub fn str(self: Self, PrintInUnit: type) []const u8 {
+            comptime {
+                return std.fmt.comptimePrint("{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
+            }
+        }
+
+        /// for comptime
+        pub fn fullStr(self: Self, PrintInUnit: type) []const u8 {
+            comptime {
+                return std.fmt.comptimePrint("{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+            }
+        }
+
+        // TODO print in scientific notation if possible upon no space left error (or maybe try to detect this with heuristic)
+        /// See `std.fmt.bufPrint`
+        pub fn bufStr(self: Self, PrintInUnit: type, buf: []u8) std.fmt.BufPrintError![]const u8 {
+            return std.fmt.bufPrint(buf, "{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
+        }
+
+        /// See `std.fmt.bufPrint`
+        pub fn bufFullStr(self: Self, PrintInUnit: type, buf: []u8) std.fmt.BufPrintError![]const u8 {
+            return std.fmt.bufPrint(buf, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+        }
+
+        /// See `std.fmt.allocPrint`
+        pub fn allocStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) std.fmt.AllocPrintError![]const u8 {
+            return std.fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+        }
+
+        /// See `std.fmt.allocPrint`
+        pub fn allocFullStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) std.fmt.AllocPrintError![]const u8 {
+            return std.fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+        }
+    };
+}
+
+// Make a quantity of the unit with the type of value
+// passed as the underlying type. The value is stored as
+// passed (i.e. in this unit).
+pub inline fn quantity(Unit: type, value: anytype) Quantity(Unit, @TypeOf(value)) {
+    return .{ .value = value };
+}

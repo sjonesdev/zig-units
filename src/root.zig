@@ -1,589 +1,169 @@
 const std = @import("std");
+const math = std.math;
 const testing = std.testing;
 
-inline fn isNumType(T: type) bool {
-    return switch (@typeInfo(T)) {
-        .int, .float, .comptime_int, .comptime_float => true,
-        else => false,
-    };
-}
-
-inline fn isNumber(val: anytype) bool {
-    return isNumType(@TypeOf(val));
-}
-
-/// unicode character symbol
-const DimensionComponent = enum(u21) {
-    time = 'T',
-    length = 'L',
-    mass = 'M',
-    current = 'I',
-    temp = 'Θ',
-    amount = 'N',
-    luminosity = 'J',
-    angle = 'R',
-    none = '0',
-};
-
-fn Dimension(
-    t_in: comptime_int,
-    l_in: comptime_int,
-    m_in: comptime_int,
-    i_in: comptime_int,
-    d_in: comptime_int,
-    n_in: comptime_int,
-    j_in: comptime_int,
-    r_in: comptime_int,
-) type {
-    return struct {
-        const Self = @This();
-        const t = t_in;
-        const l = l_in;
-        const m = m_in;
-        const i = i_in;
-        const d = d_in;
-        const n = n_in;
-        const j = j_in;
-        const r = r_in;
-
-        pub fn MultipliedBy(Dim: type) type {
-            return Dimension(
-                t + Dim.t,
-                l + Dim.l,
-                m + Dim.m,
-                i + Dim.i,
-                d + Dim.d,
-                n + Dim.n,
-                j + Dim.j,
-                r + Dim.r,
-            );
-        }
-
-        pub fn DividedBy(Dim: type) type {
-            return Dimension(
-                t - Dim.t,
-                l - Dim.l,
-                m - Dim.m,
-                i - Dim.i,
-                d - Dim.d,
-                n - Dim.n,
-                j - Dim.j,
-                r - Dim.r,
-            );
-        }
-
-        pub inline fn equals(Dim: type) bool {
-            return t == Dim.t and
-                l == Dim.l and
-                m == Dim.m and
-                i == Dim.i and
-                d == Dim.d and
-                n == Dim.n and
-                j == Dim.j and
-                r == Dim.r;
-        }
-
-        pub inline fn isBase() bool {
-            const sum = @abs(t) + @abs(l) + @abs(m) + @abs(i) + @abs(d) + @abs(n) + @abs(j) + @abs(r);
-            return sum == 1 or sum == 0;
-        }
-
-        pub fn str() []const u8 {
-            return std.fmt.comptimePrint(
-                "{u}:{d},{u}:{d},{u}:{d},{u}:{d},{u}:{d},{u}:{d},{u}:{d},{u}:{d}",
-                .{
-                    @intFromEnum(DimensionComponent.time),       t,
-                    @intFromEnum(DimensionComponent.length),     l,
-                    @intFromEnum(DimensionComponent.mass),       m,
-                    @intFromEnum(DimensionComponent.current),    i,
-                    @intFromEnum(DimensionComponent.temp),       d,
-                    @intFromEnum(DimensionComponent.amount),     n,
-                    @intFromEnum(DimensionComponent.luminosity), j,
-                    @intFromEnum(DimensionComponent.angle),      r,
-                },
-            );
-        }
-    };
-}
-
-/// Used to create a dimension orthogonal to all other existing base dimensions.
-/// This can be used to add custom dimensions (e.g. dollars), or encode semantics
-/// into an existing dimension to treat them as orthogonal.
-fn BaseDimension(comptime dim: DimensionComponent) type {
-    const Dim = Dimension(
-        if (dim == .time) 1 else 0,
-        if (dim == .length) 1 else 0,
-        if (dim == .mass) 1 else 0,
-        if (dim == .current) 1 else 0,
-        if (dim == .temp) 1 else 0,
-        if (dim == .amount) 1 else 0,
-        if (dim == .luminosity) 1 else 0,
-        if (dim == .angle) 1 else 0,
-    );
-    const dims = Dim.t + Dim.l + Dim.m + Dim.i + Dim.d + Dim.n + Dim.j;
-    comptime std.debug.assert(dims != 1 or dims != 0);
-    return Dim;
-}
-
-// Base Dimensions
-pub const Time = BaseDimension(.time);
-pub const Length = BaseDimension(.length);
-pub const Mass = BaseDimension(.mass);
-pub const Current = BaseDimension(.current);
-pub const Temperature = BaseDimension(.temp);
-pub const Amount = BaseDimension(.amount);
-pub const Luminosity = BaseDimension(.luminosity);
-pub const Angle = BaseDimension(.angle);
-pub const Dimensionless = BaseDimension(.none);
-
-// Compound Dimensions
-pub const Velocity = Length.DividedBy(Time);
-pub const Acceleration = Velocity.DividedBy(Time);
-pub const Jerk = Acceleration.DividedBy(Time);
-pub const Snap = Jerk.DividedBy(Time);
-pub const Crackle = Snap.DividedBy(Time);
-pub const Pop = Crackle.DividedBy(Time);
-pub const Goldfish = Pop.DividedBy(Time);
-pub const Force = Mass.MultipliedBy(Acceleration);
-pub const Area = Length.MultipliedBy(Length);
-pub const Pressure = Force.DividedBy(Area);
-pub const Energy = Force.MultipliedBy(Length);
-pub const Power = Energy.DividedBy(Time);
-pub const Charge = Current.MultipliedBy(Time);
-pub const Voltage = Power.DividedBy(Current);
-pub const Capacitance = Charge.DividedBy(Voltage);
-pub const Frequency = Dimensionless.DividedBy(Seconds);
-pub const Torque = Energy;
-pub const Momentum = Torque.DividedBy(Time);
-pub const Impulse = Momentum;
-pub const MomentOfInertia = Torque.MultipliedBy(Length);
-pub const Resistance = Voltage.DividedBy(Current);
-
-/// DimensionIn - dimension of unit
-/// name_in - display name of unit
-/// abbreviation_in - display abbreviation of unit
-/// multiplier_in - the value the unit must be multiplied by to convert to it's base unit
-/// offset_in - the value that must be added to the unit (after being multiplied) to convert to it's base unit
-fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, multiplier_in: comptime_float, offset_in: comptime_float) type {
-    return struct {
-        const Self = @This();
-        const Dimension = DimensionIn;
-        pub const name = name_in;
-        pub const abbreviation = abbreviation_in;
-        const multiplier: comptime_float = multiplier_in;
-        const offset: comptime_float = offset_in;
-
-        pub fn ScaledTo(unit_name: []const u8, unit_abbreviation: []const u8, scale_factor: comptime_float) type {
-            return Unit(
-                Self.Dimension,
-                unit_name,
-                unit_abbreviation,
-                scale_factor * multiplier,
-                offset * multiplier,
-            );
-        }
-
-        pub fn OffsetTo(unit_name: []const u8, unit_abbreviation: []const u8, offset_value: comptime_float) type {
-            return Unit(
-                Self.Dimension,
-                unit_name,
-                unit_abbreviation,
-                multiplier,
-                offset_value,
-            );
-        }
-
-        /// Unit * RightUnit
-        pub fn Of(RightUnit: type) type { // maybe rename to Dot?
-            return DerivedUnit(
-                @This(),
-                RightUnit,
-                .multiply,
-            );
-        }
-
-        /// Unit / RightUnit
-        pub fn Per(RightUnit: type) type {
-            return DerivedUnit(
-                @This(),
-                RightUnit,
-                .divide,
-            );
-        }
-
-        /// Inverse, Unit^(-1)
-        pub fn Inv() type {
-            return Unitless.Per(Self);
-        }
-
-        /// Unit^(power), power > 0
-        pub fn ToThe(power: comptime_int) type {
-            if (power <= 0) {
-                @compileError("ToThe only supports integers >0");
-            }
-            var Result = Self;
-            for (1..power) |_| {
-                Result = Result.Of(Self);
-            }
-            return Result;
-        }
-
-        /// Unit^(-power), power > 0
-        pub fn Root(power: comptime_int) type {
-            if (power <= 0) {
-                @compileError("Root only supports integers >0");
-            }
-            var Result = Inv();
-            for (1..power) |_| {
-                Result = Result.Per(Self);
-            }
-            return Result;
-        }
-
-        /// Unit^(power)
-        pub fn Pow(power: comptime_int) type {
-            if (power == 0) {
-                return Unitless;
-            } else if (power < 0) {
-                return Root(@abs(power));
-            } else {
-                return ToThe(power);
-            }
-        }
-
-        pub fn Named(new_name: []const u8, new_abbreviation: []const u8) type {
-            return Unit(
-                Self.Dimension,
-                new_name,
-                new_abbreviation,
-                multiplier,
-                offset,
-            );
-        }
-
-        pub fn Abbreviated(new_abbreviation: []const u8) type {
-            return Unit(
-                Self.Dimension,
-                name,
-                new_abbreviation,
-                multiplier,
-                offset,
-            );
-        }
-
-        pub inline fn equals(OtherUnit: type) bool {
-            return Self.multiplier == OtherUnit.multiplier and Self.offset == OtherUnit.offset;
-        }
-
-        pub inline fn of(
-            value: anytype,
-        ) Quantity(
-            Self,
-            @TypeOf(value),
-        ) {
-            return .{ .value = value };
-        }
-    };
-}
-
-const UnitCombinationOperation = enum { multiply, divide };
-fn DerivedUnit(
-    LeftHandUnit: type,
-    RightHandUnit: type,
-    operation: UnitCombinationOperation,
-) type {
-    if (LeftHandUnit.offset != 0 or RightHandUnit.offset != 0) {
-        @compileError("Deriving from an offset unit is not allowed");
-    }
-    const Dim: type, const name: []const u8, const mult: comptime_float = switch (operation) {
-        .multiply => .{
-            LeftHandUnit.Dimension.MultipliedBy(RightHandUnit.Dimension),
-            LeftHandUnit.name ++ "*" ++ RightHandUnit.name,
-            LeftHandUnit.multiplier * RightHandUnit.multiplier,
-        },
-        .divide => .{
-            LeftHandUnit.Dimension.DividedBy(RightHandUnit.Dimension),
-            LeftHandUnit.name ++
-                "/" ++
-                if (RightHandUnit.Dimension.isBase()) RightHandUnit.name else "(" ++ RightHandUnit.name ++ ")",
-            LeftHandUnit.multiplier / RightHandUnit.multiplier,
-        },
-    };
-
-    return Unit(
-        Dim,
-        name,
-        "", // TODO
-        mult,
-        0,
-    );
-}
-
-pub fn BaseUnit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8) type {
-    return Unit(DimensionIn, name_in, abbreviation_in, 1, 0);
-}
-
-fn Quantity(UnitIn: type, ValueTypeIn: type) type {
-    return struct {
-        const Self = @This();
-        const Unit = UnitIn;
-        const ValueType = ValueTypeIn;
-
-        value: ValueType,
-
-        inline fn baseValue(self: Self) @TypeOf(self.value, 0.0) {
-            return @mulAdd(
-                @TypeOf(self.value, 0.0),
-                self.value,
-                Self.Unit.multiplier,
-                Self.Unit.offset,
-            );
-        }
-
-        /// Converts this quantity's value to OtherUnit and returns the resulting Quantity
-        inline fn in(
-            self: Self,
-            OtherUnit: type,
-        ) if (Self.Unit.equals(OtherUnit)) ValueType else @TypeOf(self.value, 0.0) {
-            if (Self.Unit.equals(OtherUnit)) return self.value;
-            const base_value = self.baseValue();
-            return (base_value - OtherUnit.offset) / OtherUnit.multiplier;
-        }
-
-        /// Converts this quantity's value to OtherUnit and returns the resulting value
-        pub inline fn to(
-            self: Self,
-            OtherUnit: type,
-        ) Quantity(
-            OtherUnit,
-            if (Self.Unit.equals(OtherUnit)) ValueType else @TypeOf(self.value, 0.0),
-        ) {
-            return .{ .value = self.in(OtherUnit) };
-        }
-
-        /// Converts this quantity's value to a value of type T and returns
-        /// the resulting Quantity
-        ///
-        /// This will allow conversion from integers to floats as well, but
-        /// not from floats to integers
-        pub inline fn as(self: Self, T: type) Quantity(Self.Unit, T) {
-            if (@typeInfo(ValueType) == .int) {
-                return .{ .value = @as(T, @floatFromInt(self.value)) };
-            }
-            return .{ .value = @as(T, self.value) };
-        }
-
-        // TODO support integer quantities by automatically calling @floatFromInt where appropriate
-        pub inline fn plus(
-            self: Self,
-            rhs: anytype,
-        ) Quantity(
-            Self.Unit,
-            @TypeOf(
-                self.value,
-                if (Self.Unit.equals(@TypeOf(rhs).Unit)) rhs.value else rhs.in(Self.Unit),
-            ),
-        ) {
-            const Rhs = @TypeOf(rhs);
-            // TODO handle pointers to quantities (either by literally handling them or providing a custom error message)
-            if (!Self.Unit.Dimension.equals(Rhs.Unit.Dimension)) {
-                @compileError("Adding different dimensions in not allowed");
-            }
-            const right_val = if (Self.Unit.equals(Rhs.Unit)) rhs.value else rhs.in(Self.Unit);
-            return .{ .value = self.value + right_val };
-        }
-
-        pub inline fn minus(
-            self: Self,
-            rhs: anytype,
-        ) Quantity(
-            Self.Unit,
-            @TypeOf(
-                self.value,
-                if (Self.Unit.equals(@TypeOf(rhs).Unit)) rhs.value else rhs.in(Self.Unit),
-            ),
-        ) {
-            const Rhs = @TypeOf(rhs);
-            if (!Self.Unit.Dimension.equals(Rhs.Unit.Dimension)) {
-                @compileError("Adding different dimensions in not allowed");
-            }
-            const right_val = if (Self.Unit.multiplier == Rhs.Unit.multiplier and
-                Self.Unit.offset == Rhs.Unit.offset) rhs.value else rhs.in(Self.Unit);
-            return .{ .value = self.value - right_val };
-        }
-
-        /// Multiplies two quantities. Note that normal multiplication rules apply here.
-        pub inline fn times(
-            self: Self,
-            rhs: anytype,
-        ) Quantity(
-            Self.Unit.Of(@TypeOf(rhs).Unit),
-            @TypeOf(
-                self.value,
-                if (isNumType(@TypeOf(rhs))) rhs else if (Self.Unit.equals(@TypeOf(rhs).Unit)) rhs.value else rhs.in(Self.Unit),
-            ),
-        ) {
-            const right_val = if (isNumber(rhs)) blk: {
-                break :blk rhs;
-            } else rhs.in(Self.Unit);
-            return .{ .value = self.value * right_val };
-        }
-
-        /// Divides two quantities. Note that normal division rules apply here,
-        /// meaning if you divide two integer quantities, integer division will
-        /// be performed. Additionally, ambiguous coercions will error out.
-        pub inline fn div(
-            self: Self,
-            rhs: anytype,
-        ) Quantity(
-            Self.Unit.Per(@TypeOf(rhs).Unit),
-            @TypeOf(
-                self.value,
-                if (isNumType(@TypeOf(rhs))) rhs else if (Self.Unit.equals(@TypeOf(rhs).Unit)) rhs.value else rhs.in(Self.Unit),
-            ),
-        ) {
-            const right_val = if (isNumber(rhs)) blk: {
-                break :blk rhs;
-            } else rhs.in(Self.Unit);
-            return .{ .value = self.value / right_val };
-        }
-
-        /// see `@abs`
-        pub inline fn abs(self: Self) Quantity(
-            Self.Unit,
-            Self.ValueType,
-        ) {
-            return .{ .value = @abs(self.value) };
-        }
-
-        /// See `std.math.pow`
-        pub inline fn pow(self: Self, power: ValueType) Quantity(
-            Self.Unit.Pow(power),
-            ValueType,
-        ) {
-            return .{ .value = std.math.pow(ValueType, self.value, power) };
-        }
-
-        /// 1 / Quantity
-        pub inline fn inv(self: Self) Quantity(Self.Unit.Inv(), ValueType) {
-            return Unitless.of(1).div(self);
-        }
-
-        /// for comptime
-        pub fn str(self: Self, PrintInUnit: type) []const u8 {
-            comptime {
-                return std.fmt.comptimePrint("{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
-            }
-        }
-
-        /// for comptime
-        pub fn fullStr(self: Self, PrintInUnit: type) []const u8 {
-            comptime {
-                return std.fmt.comptimePrint("{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
-            }
-        }
-
-        /// TODO print in scientific notation if possible upon no space left error (or maybe try to detect this with heuristic)
-        pub fn bufStr(self: Self, PrintInUnit: type, buf: []u8) std.fmt.BufPrintError![]const u8 {
-            return std.fmt.bufPrint(buf, "{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
-        }
-
-        pub fn bufFullStr(self: Self, PrintInUnit: type, buf: []u8) std.fmt.BufPrintError![]const u8 {
-            return std.fmt.bufPrint(buf, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
-        }
-
-        pub fn allocStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) std.fmt.AllocPrintError![]const u8 {
-            return std.fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
-        }
-
-        pub fn allocFullStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) std.fmt.AllocPrintError![]const u8 {
-            return std.fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
-        }
-    };
-}
+const unit = @import("unit.zig");
+const dim = @import("dimension.zig");
+const quantity = @import("quantity.zig");
+const Quantity = quantity.Quantity;
 
 // Base Units
-// TODO split up units and change all units to be expressed as relations to base units or other units in their file
-pub const Unitless = BaseUnit(Dimensionless, "unitless", "u");
-pub const Seconds = BaseUnit(Time, "seconds", "s");
-pub const Meters = BaseUnit(Length, "meters", "m");
-pub const Kilograms = BaseUnit(Mass, "kilograms", "kg");
-pub const Amps = BaseUnit(Current, "amps", "A");
-pub const Kelvin = BaseUnit(Temperature, "kelvin", "K");
-pub const Moles = BaseUnit(Amount, "moles", "mol");
-pub const Candelas = BaseUnit(Luminosity, "candelas", "cd");
-pub const Rotations = BaseUnit(Angle, "rotations", "rot");
+pub const Unitless = unit.Unitless;
+const unitless = Unitless.of;
+pub const Seconds = unit.BaseUnit(dim.Time, "seconds", "s");
+const seconds = Seconds.of;
+pub const Meters = unit.BaseUnit(dim.Length, "meters", "m");
+const meters = Meters.of;
+pub const Kilograms = unit.BaseUnit(dim.Mass, "kilograms", "kg");
+const kilograms = Kilograms.of;
+pub const Amps = unit.BaseUnit(dim.Current, "amps", "A");
+const amps = Amps.of;
+pub const Kelvin = unit.BaseUnit(dim.Temperature, "kelvin", "K");
+const kelvin = Kelvin.of;
+pub const Moles = unit.BaseUnit(dim.Amount, "moles", "mol");
+const moles = Moles.of;
+pub const Candelas = unit.BaseUnit(dim.Luminosity, "candelas", "cd");
+const candelas = Candelas.of;
+pub const Rotations = unit.BaseUnit(dim.Angle, "rotations", "rot");
+const rotations = Rotations.of;
+// could also do this but it is a lot of boiler plate, but does avoid circular imports
+// const meters = struct {
+//     inline fn of(value: anytype) Quantity(Meters, @TypeOf(value)) {
+//         return .{ .value = quantity.of(Meters, value) };
+//     }
+// }.of;
 
 // Converted Units
 pub const Yards = Feet.ScaledTo("yards", "yd", 1 / 12);
+pub const yards = Yards.of;
 pub const Feet = Meters.ScaledTo("feet", "ft", 0.3048);
+pub const feet = Feet.of;
 pub const Inches = Feet.ScaledTo("inches", "in", 12);
+pub const inches = Inches.of;
 pub const Nanometers = Meters.ScaledTo("nanometers", "nm", 1_000_000_000);
+pub const nanometers = Nanometers.of;
 pub const Micrometers = Meters.ScaledTo("micrometers", "μm", 1_000_000);
+pub const micrometers = Micrometers.of;
 pub const Millimeters = Meters.ScaledTo("millimeters", "mm", 1000);
+pub const millimeters = Millimeters.of;
 pub const Centimeters = Meters.ScaledTo("centimeters", "cm", 100);
-pub const Decimeter = Meters.ScaledTo("decimeters", "dm", 10);
+pub const centimeters = Centimeters.of;
+pub const Decimeters = Meters.ScaledTo("decimeters", "dm", 10);
+pub const decimeters = Decimeters.of;
 pub const Kilometers = Meters.ScaledTo("kilometers", "km", 0.001);
+pub const kilometers = Kilometers.of;
 pub const Celsius = Kelvin.OffsetTo("degrees celsius", "°C", -272.15);
+pub const celsius = Celsius.of;
 pub const Rankine = Kelvin.ScaledTo("degrees rankine", "°Ra", 1.8);
+pub const rankine = Rankine.of;
 pub const Fahrenheit = Rankine.OffsetTo("degrees fahrenheit", "°F", -458.67);
+pub const fahrenheit = Fahrenheit.of;
 pub const Nanoseconds = Seconds.ScaledTo("nanoseconds", "ns", 1_000_000_000);
+pub const nanoseconds = Nanoseconds.of;
 pub const Microseconds = Seconds.ScaledTo("microseconds", "μs", 1_000_000);
+pub const microseconds = Microseconds.of;
 pub const Milliseconds = Seconds.ScaledTo("milliseconds", "ms", 1000);
+pub const milliseconds = Milliseconds.of;
 pub const Minutes = Seconds.ScaledTo("minutes", "min", 1 / 60);
+pub const minutes = Minutes.of;
 pub const Hours = Minutes.ScaledTo("hours", "hr", 1 / 60);
+pub const hours = Hours.of;
 pub const Days = Hours.ScaledTo("days", "d", 1 / 24);
+pub const days = Days.of;
 pub const MeanMonth = Days.ScaledTo("months", "mo", 1 / 30.4375);
+pub const meanMonth = MeanMonth.of;
 pub const MeanYears = Days.ScaledTo("years", "yr", 1 / 365.2425);
+pub const meanYears = MeanYears.of;
 pub const Micrograms = Kilograms.ScaledTo("micrograms", "μg", 1_000_000_000);
+pub const micrograms = Micrograms.of;
 pub const Milligrams = Kilograms.ScaledTo("milligrams", "mg", 1_000_000);
+pub const milligrams = Milligrams.of;
 pub const Grams = Kilograms.ScaledTo("grams", "g", 1000);
+pub const grams = Grams.of;
 pub const Pounds = Kilometers.ScaledTo("pounds", "lbs", 2.204623);
-pub const Radians = Rotations.ScaledTo("radians", "rad", 2 * std.math.pi);
+pub const pounds = Pounds.of;
+pub const Radians = Rotations.ScaledTo("radians", "rad", 2 * math.pi);
+pub const radians = Radians.of;
 pub const Degrees = Rotations.ScaledTo("degrees", "°", 360);
+pub const degrees = Degrees.of;
 
 // Derived Units
 pub const SquareMeters = Meters.Of(Meters).Named("square meters", "m²");
+pub const squareMeters = SquareMeters.of;
 pub const MetersPerSecond = Meters.Per(Seconds).Named("meters per second", "m/s");
+pub const metersPerSecond = MetersPerSecond.of;
 pub const MetersPerSecondSquared = Meters.Per(Seconds.ToThe(2)).Named("meters per second squared", "m/s²");
+pub const metersPerSecondSquared = MetersPerSecondSquared.of;
 pub const MetersPerSecondCubed = Meters.Per(Seconds.ToThe(3)).Named("meters per second cubed", "m/s³");
+pub const metersPerSecondCubed = MetersPerSecondCubed.of;
 pub const Newtons = Kilograms.Of(MetersPerSecondSquared).Named("newtons", "N");
+pub const newtons = Newtons.of;
 pub const Volts = Kilograms.Of(SquareMeters).Per(Seconds.ToThe(3)).Per(Amps).Named("volts", "V");
+pub const volts = Volts.of;
 pub const Ohms = Volts.Per(Amps).Named("ohms", "Ω");
+pub const ohms = Ohms.of;
 pub const NewtonMeters = Newtons.Of(Meters).Named("newton-meters", "Nm");
+pub const newtonMeters = NewtonMeters.of;
 pub const KilogramMetersSquared = Kilograms.Of(Meters.ToThe(2)).Named("kilogram meters squared", "kg⋅m²");
+pub const kilogramMetersSquared = KilogramMetersSquared.of;
 pub const NewtonSeconds = Kilograms.Of(MetersPerSecond).Named("newton-second", "N⋅s");
+pub const newtonSeconds = NewtonSeconds.of;
 pub const KilogramMetersPerSecond = NewtonSeconds.Named("kilogram meters per secon", "kg⋅m/s");
+pub const kilogramMetersPerSecond = KilogramMetersPerSecond.of;
 pub const RotationsPerSecond = Rotations.Per(Seconds).Named("rotations per second", "rot/s");
+pub const rotationsPerSecond = RotationsPerSecond.of;
 pub const RotationsPerSecondSquared = Rotations.Per(Seconds.ToThe(2)).Named("rotations per second squared", "rot/s²");
+pub const rotationsPerSecondSquared = RotationsPerSecondSquared.of;
 pub const Joules = NewtonMeters.Named("Joules", "J");
+pub const joules = Joules.of;
 pub const Watts = Joules.Per(Seconds).Named("watts", "W");
+pub const watts = Watts.of;
 pub const Hertz = Seconds.Inv().Named("hertz", "Hz");
+pub const hertz = Hertz.of;
 pub const VoltSecondsPerMeter = Volts.Per(MetersPerSecond).Named("volt seconds per meter", "v⋅s/m"); // linear kV
+pub const voltSecondsPerMeter = VoltSecondsPerMeter.of;
 pub const VoltSecondsSquaredPerMeter = Volts.Per(MetersPerSecondSquared).Named("volt seconds squared per meter", "v⋅s²/m"); // linear kA
+pub const voltSecondsSquaredPerMeter = VoltSecondsSquaredPerMeter.of;
 
 // Converted Derived Units
 pub const Milliohms = Ohms.ScaledTo("milliohms", "mΩ", 1000);
+pub const milliohms = Milliohms.of;
 pub const Kiloohms = Ohms.ScaledTo("kiloohms", "kΩ", 0.001);
+pub const kiloohms = Kiloohms.of;
 pub const Millijoules = Joules.ScaledTo("millijoules", "mJ", 1000);
+pub const millijoules = Millijoules.of;
 pub const Kilojoules = Joules.ScaledTo("kilojoules", "kJ", 0.001);
+pub const kilojoules = Kilojoules.of;
 pub const Milliwatt = Watts.ScaledTo("milliwaitts", "mW", 1000);
+pub const milliwatt = Milliwatt.of;
 pub const Kilowatt = Watts.ScaledTo("kilowatts", "kW", 0.001);
+pub const kilowatt = Kilowatt.of;
 pub const Horsepower = Watts.ScaledTo("horsepower", "hp", 745.7);
+pub const horsepower = Horsepower.of;
 pub const FeetPerSecond = Feet.Per(Seconds).Named("feet per second", "ft/s");
+pub const feetPerSecond = FeetPerSecond.of;
 pub const FeetPerSecondSquared = FeetPerSecond.Per(Seconds).Named("feet per second squared", "ft/s²");
+pub const feetPerSecondSquared = FeetPerSecondSquared.of;
 pub const RotationsPerMinute = Rotations.Per(Minutes).Named("rotations per minute", "rot/min");
+pub const rotationsPerMinute = RotationsPerMinute.of;
 pub const RotationsPerMinuteSquared = RotationsPerMinute.Per(Minutes).Named("rotations per minute squared", "rot/min²");
+pub const rotationsPerMinuteSquared = RotationsPerMinuteSquared.of;
 pub const RadiansPerSecond = Radians.Per(Seconds).Named("radians per second", "rad/s");
+pub const radiansPerSecond = RadiansPerSecond.of;
 pub const RadiansPerSecondSquared = RadiansPerSecond.Per(Seconds).Named("radians per second squared", "rad/s²");
+pub const radiansPerSecondSquared = RadiansPerSecondSquared.of;
 pub const DegreesPerSecond = Degrees.Per(Seconds).Named("degrees per second", "deg/s");
+pub const degreesPerSecond = DegreesPerSecond.of;
 pub const DegreesPerSecondSquared = DegreesPerSecond.Per(Seconds).Named("degrees per second squared", "deg/s²");
+pub const degreesPerSecondSquared = DegreesPerSecondSquared.of;
 pub const VoltSecondsPerRadian = Volts.Per(RadiansPerSecond).Named("volt seconds per radian", "v⋅s/rad"); // angular kV
+pub const voltSecondsPerRadian = VoltSecondsPerRadian.of;
 pub const VoltSecondsSquaredPerRadian = Volts.Per(RadiansPerSecondSquared).Named("volt seconds squared per radian", "v⋅s²/rad"); // angular kA
+pub const voltSecondsSquaredPerRadian = VoltSecondsSquaredPerRadian.of;
 
 // recommended by std lib
-const f128_tol = std.math.sqrt(std.math.floatEps(f128));
-const f16_tol = std.math.sqrt(std.math.floatEps(f16));
+const f128_tol = math.sqrt(math.floatEps(f128));
+const f16_tol = math.sqrt(math.floatEps(f16));
 test "Create quantities" {
     try testing.expectEqual(Meters.of(3).value, 3);
 }
@@ -611,18 +191,9 @@ test "Adding and subtracting same dimensions" {
     );
 }
 
-test "Multiplying dimensions" {
+test "Multiplying" {
     const mkg = Meters.of(2).times(Kilograms.of(5));
-    try testing.expect(@TypeOf(mkg).Unit.Dimension.equals(Dimension(
-        0,
-        1,
-        1,
-        0,
-        0,
-        0,
-        0,
-        0,
-    )));
+    try testing.expect(@TypeOf(mkg).Unit.Dimension.equals(dim.Length.MultipliedBy(dim.Mass)));
     try testing.expectApproxEqRel(
         @as(f128, 10),
         mkg.in(Meters.Of(Kilograms)),
@@ -630,18 +201,9 @@ test "Multiplying dimensions" {
     );
 }
 
-test "Dividing dimensions" {
+test "Dividing" {
     const mps = Meters.of(7).div(Seconds.of(2));
-    try testing.expect(@TypeOf(mps).Unit.Dimension.equals(Dimension(
-        -1,
-        1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-    )));
+    try testing.expect(@TypeOf(mps).Unit.Dimension.equals(dim.Length.DividedBy(dim.Time)));
     try testing.expectEqual(
         3,
         mps.in(Meters.Per(Seconds)),
@@ -697,17 +259,14 @@ test "Units maintain identity and inverse properties of multiplication" {
     // there are, of course, absurdly large/precise values where this does not hold
     // in those cases, floating point arithmetic is likely not appropriate anyways
     const a = meters(1592287654567656789765787689878989876543234567654345678987654567345676543248472).div(Seconds.of(@as(f32, 2.123425))).times(Seconds.of(0.098765434569999999999997865435678654679999999999999978));
-    try std.testing.expect(Length.equals(@TypeOf(a).Unit.Dimension));
-    try std.testing.expect(Meters.equals(@TypeOf(a).Unit));
+    try testing.expect(dim.Length.equals(@TypeOf(a).Unit.Dimension));
+    try testing.expect(Meters.equals(@TypeOf(a).Unit));
 
     const b = radians(123456789).times(meters(@as(f32, 0.123456789654))).div(meters(34253));
-    try std.testing.expect(Angle.equals(@TypeOf(b).Unit.Dimension));
-    try std.testing.expect(Radians.equals(@TypeOf(b).Unit));
+    try testing.expect(dim.Angle.equals(@TypeOf(b).Unit.Dimension));
+    try testing.expect(Radians.equals(@TypeOf(b).Unit));
 
     const c = radians(123456789).times(meters(@as(i32, 5)).as(f32)).div(meters(34253));
-    try std.testing.expect(Angle.equals(@TypeOf(c).Unit.Dimension));
-    try std.testing.expect(Radians.equals(@TypeOf(c).Unit));
+    try testing.expect(dim.Angle.equals(@TypeOf(c).Unit.Dimension));
+    try testing.expect(Radians.equals(@TypeOf(c).Unit));
 }
-
-const meters = &Meters.of;
-const radians = &Radians.of;
