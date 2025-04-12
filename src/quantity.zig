@@ -24,12 +24,7 @@ pub fn Quantity(UnitIn: type, ValueTypeIn: type) type {
         value: ValueType,
 
         inline fn baseValue(self: Self) @TypeOf(self.value, 0.0) {
-            return @mulAdd(
-                @TypeOf(self.value, 0.0),
-                self.value,
-                Self.Unit.multiplier,
-                Self.Unit.offset,
-            );
+            return (self.value - Self.Unit.offset) / Self.Unit.multiplier;
         }
 
         /// Converts this quantity's value to OtherUnit and returns the resulting Quantity
@@ -39,7 +34,12 @@ pub fn Quantity(UnitIn: type, ValueTypeIn: type) type {
         ) if (Self.Unit.equals(OtherUnit)) ValueType else @TypeOf(self.value, 0.0) {
             if (Self.Unit.equals(OtherUnit)) return self.value;
             const base_value = self.baseValue();
-            return (base_value - OtherUnit.offset) / OtherUnit.multiplier;
+            return @mulAdd(
+                @TypeOf(base_value, 0.0),
+                base_value,
+                OtherUnit.multiplier,
+                OtherUnit.offset,
+            );
         }
 
         /// Converts this quantity's value to OtherUnit and returns the resulting value

@@ -16,16 +16,23 @@ pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8,
         pub const multiplier: comptime_float = multiplier_in;
         pub const offset: comptime_float = offset_in;
 
+        /// scale_factor refers to the value you must multiply
+        /// the current unit by to get a value in the new unit.
+        /// That is, the amount of the new unit that is one of the
+        /// current unit
         pub fn ScaledTo(unit_name: []const u8, unit_abbreviation: []const u8, scale_factor: comptime_float) type {
             return Unit(
                 Self.Dimension,
                 unit_name,
                 unit_abbreviation,
                 scale_factor * multiplier,
-                offset * multiplier,
+                scale_factor * offset,
             );
         }
 
+        /// offset_value refers to the value you must add to the
+        /// current unit to get a value in the new unit. That is, the
+        /// value of the new unit equal to 0 of the old unit.
         pub fn OffsetTo(unit_name: []const u8, unit_abbreviation: []const u8, offset_value: comptime_float) type {
             return Unit(
                 Self.Dimension,
