@@ -12,6 +12,12 @@ inline fn isNumber(val: anytype) bool {
     return isNumType(@TypeOf(val));
 }
 
+// could try to implement kinds where different quantities of
+// the same units/dimension are not compatible
+// this could also solve the case of needing dynamic dimensions
+// since if you could make any kind of unit you don't need different dimensions
+// or we could give the kinds to the units themselves
+// mp-units created a concept of named unit on top of kind_of<dimension>
 pub fn Quantity(UnitIn: type, ValueTypeIn: type) type {
     return struct {
         const Self = @This();
@@ -78,7 +84,7 @@ pub fn Quantity(UnitIn: type, ValueTypeIn: type) type {
         ) {
             const Rhs = @TypeOf(rhs);
             // TODO handle pointers to quantities (either by literally handling them or providing a custom error message)
-            if (!Self.Unit.Dimension.equals(Rhs.Unit.Dimension)) {
+            if (!(Self.Unit.Dimension == Rhs.Unit.Dimension)) {
                 @compileError("Adding different dimensions in not allowed");
             }
             const right_val = if (Self.Unit.equals(Rhs.Unit)) rhs.value else rhs.in(Self.Unit);
@@ -96,7 +102,7 @@ pub fn Quantity(UnitIn: type, ValueTypeIn: type) type {
             ),
         ) {
             const Rhs = @TypeOf(rhs);
-            if (!Self.Unit.Dimension.equals(Rhs.Unit.Dimension)) {
+            if (!(Self.Unit.Dimension == Rhs.Unit.Dimension)) {
                 @compileError("Adding different dimensions in not allowed");
             }
             const right_val = if (Self.Unit.multiplier == Rhs.Unit.multiplier and

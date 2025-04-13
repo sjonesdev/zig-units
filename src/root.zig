@@ -7,6 +7,7 @@ const dim = @import("dimension.zig");
 const quantity = @import("quantity.zig");
 const Quantity = quantity.Quantity;
 
+// TODO can i utilize integer ratios instead of floats for scale factors
 // Base Units
 pub const Unitless = unit.Unitless;
 const unitless = Unitless.of;
@@ -194,7 +195,7 @@ test "Adding and subtracting same dimensions" {
 
 test "Multiplying" {
     const mkg = Meters.of(2).times(Kilograms.of(5));
-    try testing.expect(@TypeOf(mkg).Unit.Dimension.equals(dim.Length.MultipliedBy(dim.Mass)));
+    try testing.expect(@TypeOf(mkg).Unit.Dimension == dim.Length.MultipliedBy(dim.Mass));
     try testing.expectApproxEqRel(
         @as(f128, 10),
         mkg.in(Meters.Of(Kilograms)),
@@ -204,7 +205,7 @@ test "Multiplying" {
 
 test "Dividing" {
     const mps = Meters.of(7).div(Seconds.of(2));
-    try testing.expect(@TypeOf(mps).Unit.Dimension.equals(dim.Length.DividedBy(dim.Time)));
+    try testing.expect(@TypeOf(mps).Unit.Dimension == dim.Length.DividedBy(dim.Time));
     try testing.expectEqual(
         3,
         mps.in(Meters.Per(Seconds)),
@@ -260,14 +261,14 @@ test "Units maintain identity and inverse properties of multiplication" {
     // there are, of course, absurdly large/precise values where this does not hold
     // in those cases, floating point arithmetic is likely not appropriate anyways
     const a = meters(1592287654567656789765787689878989876543234567654345678987654567345676543248472).div(Seconds.of(@as(f32, 2.123425))).times(Seconds.of(0.098765434569999999999997865435678654679999999999999978));
-    try testing.expect(dim.Length.equals(@TypeOf(a).Unit.Dimension));
+    try testing.expect(dim.Length == @TypeOf(a).Unit.Dimension);
     try testing.expect(Meters.equals(@TypeOf(a).Unit));
 
     const b = radians(123456789).times(meters(@as(f32, 0.123456789654))).div(meters(34253));
-    try testing.expect(dim.Angle.equals(@TypeOf(b).Unit.Dimension));
+    try testing.expect(dim.Angle == @TypeOf(b).Unit.Dimension);
     try testing.expect(Radians.equals(@TypeOf(b).Unit));
 
     const c = radians(123456789).times(meters(@as(i32, 5)).as(f32)).div(meters(34253));
-    try testing.expect(dim.Angle.equals(@TypeOf(c).Unit.Dimension));
+    try testing.expect(dim.Angle == @TypeOf(c).Unit.Dimension);
     try testing.expect(Radians.equals(@TypeOf(c).Unit));
 }

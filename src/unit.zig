@@ -2,6 +2,9 @@ const pi = @import("std").math.pi;
 const dim = @import("dimension.zig");
 const quantity = @import("quantity.zig");
 
+// could define a list of special unit names and otherwise rely on dynamic unit representation creation?
+// that wouldn't be extensible though
+
 /// DimensionIn - dimension of unit
 /// name_in - display name of unit
 /// abbreviation_in - display abbreviation of unit

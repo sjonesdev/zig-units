@@ -61,17 +61,6 @@ fn Dimension(
             );
         }
 
-        pub inline fn equals(Dim: type) bool {
-            return t == Dim.t and
-                l == Dim.l and
-                m == Dim.m and
-                i == Dim.i and
-                d == Dim.d and
-                n == Dim.n and
-                j == Dim.j and
-                r == Dim.r;
-        }
-
         pub inline fn isBase() bool {
             const sum = @abs(t) + @abs(l) + @abs(m) + @abs(i) + @abs(d) + @abs(n) + @abs(j) + @abs(r);
             return sum == 1 or sum == 0;
@@ -150,7 +139,7 @@ pub const Resistance = Voltage.DividedBy(Current);
 
 test "Multiplying dimensions" {
     const lm = Length.MultipliedBy(Mass);
-    try testing.expect(lm.equals(Dimension(
+    try testing.expect(lm == Dimension(
         0,
         1,
         1,
@@ -159,12 +148,12 @@ test "Multiplying dimensions" {
         0,
         0,
         0,
-    )));
+    ));
 }
 
 test "Dividing dimensions" {
     const tl = Length.DividedBy(Time);
-    try testing.expect(tl.equals(Dimension(
+    try testing.expect(tl == Dimension(
         -1,
         1,
         0,
@@ -173,5 +162,5 @@ test "Dividing dimensions" {
         0,
         0,
         0,
-    )));
+    ));
 }
