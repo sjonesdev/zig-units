@@ -1,5 +1,7 @@
 const std = @import("std");
 const Unitless = @import("unit.zig").Unitless;
+const math = std.math;
+const fmt = std.fmt;
 
 inline fn isNumType(T: type) bool {
     return switch (@typeInfo(T)) {
@@ -146,6 +148,48 @@ pub fn Quantity(UnitIn: type, ValueTypeIn: type) type {
             return .{ .value = self.value / right_val };
         }
 
+        pub inline fn eq(self: Self, rhs: anytype) bool {
+            return self.value == rhs.in(Self.Unit);
+        }
+
+        /// Recommended for comparing small numbers close to 0. See
+        /// `std.math.approxEqAbs` for more info.
+        pub inline fn approxEqAbs(self: Self, rhs: anytype, tolerance: anytype) bool {
+            return math.approxEqAbs(
+                @TypeOf(self.value, rhs.in(Self.Unit), tolerance),
+                self.value,
+                rhs.in(Self.Unit),
+                tolerance,
+            );
+        }
+
+        /// Recommended for comparing numbers not close to 0. See
+        /// `std.math.approxEqRel` for more info.
+        pub inline fn approxEqRel(self: Self, rhs: anytype, tolerance: anytype) bool {
+            return math.approxEqRel(
+                @TypeOf(self.value, rhs.in(Self.Unit), tolerance),
+                self.value,
+                rhs.in(Self.Unit),
+                tolerance,
+            );
+        }
+
+        pub inline fn gt(self: Self, rhs: anytype) bool {
+            return self.value > rhs.in(Self.Unit);
+        }
+
+        pub inline fn lt(self: Self, rhs: anytype) bool {
+            return self.value < rhs.in(Self.Unit);
+        }
+
+        pub inline fn gte(self: Self, rhs: anytype) bool {
+            return self.value >= rhs.in(Self.Unit);
+        }
+
+        pub inline fn lte(self: Self, rhs: anytype) bool {
+            return self.value <= rhs.in(Self.Unit);
+        }
+
         /// see `@abs`
         pub inline fn abs(self: Self) Quantity(
             Self.Unit,
@@ -154,12 +198,13 @@ pub fn Quantity(UnitIn: type, ValueTypeIn: type) type {
             return .{ .value = @abs(self.value) };
         }
 
-        /// See `std.math.pow`
+        /// Only works for quantities with underlying value type
+        /// `f32` or `f64`. See `std.math.pow` for more info.
         pub inline fn pow(self: Self, power: ValueType) Quantity(
             Self.Unit.Pow(power),
             ValueType,
         ) {
-            return .{ .value = std.math.pow(ValueType, self.value, power) };
+            return .{ .value = math.pow(ValueType, self.value, power) };
         }
 
         /// 1 / Quantity
@@ -170,36 +215,36 @@ pub fn Quantity(UnitIn: type, ValueTypeIn: type) type {
         /// for comptime
         pub fn str(self: Self, PrintInUnit: type) []const u8 {
             comptime {
-                return std.fmt.comptimePrint("{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
+                return fmt.comptimePrint("{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
             }
         }
 
         /// for comptime
         pub fn fullStr(self: Self, PrintInUnit: type) []const u8 {
             comptime {
-                return std.fmt.comptimePrint("{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+                return fmt.comptimePrint("{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
             }
         }
 
         // TODO print in scientific notation if possible upon no space left error (or maybe try to detect this with heuristic)
         /// See `std.fmt.bufPrint`
-        pub fn bufStr(self: Self, PrintInUnit: type, buf: []u8) std.fmt.BufPrintError![]const u8 {
-            return std.fmt.bufPrint(buf, "{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
+        pub fn bufStr(self: Self, PrintInUnit: type, buf: []u8) fmt.BufPrintError![]const u8 {
+            return fmt.bufPrint(buf, "{d}{s}", .{ self.in(PrintInUnit), PrintInUnit.abbreviation });
         }
 
         /// See `std.fmt.bufPrint`
-        pub fn bufFullStr(self: Self, PrintInUnit: type, buf: []u8) std.fmt.BufPrintError![]const u8 {
-            return std.fmt.bufPrint(buf, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+        pub fn bufFullStr(self: Self, PrintInUnit: type, buf: []u8) fmt.BufPrintError![]const u8 {
+            return fmt.bufPrint(buf, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
         }
 
         /// See `std.fmt.allocPrint`
-        pub fn allocStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) std.fmt.AllocPrintError![]const u8 {
-            return std.fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+        pub fn allocStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) fmt.AllocPrintError![]const u8 {
+            return fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
         }
 
         /// See `std.fmt.allocPrint`
-        pub fn allocFullStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) std.fmt.AllocPrintError![]const u8 {
-            return std.fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
+        pub fn allocFullStr(self: Self, PrintInUnit: type, alloc: std.mem.Allocator) fmt.AllocPrintError![]const u8 {
+            return fmt.allocPrint(alloc, "{d} {s}", .{ self.in(PrintInUnit), PrintInUnit.name });
         }
     };
 }
