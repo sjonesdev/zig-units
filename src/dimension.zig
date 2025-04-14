@@ -1,166 +1,168 @@
 const std = @import("std");
+const fmt = std.fmt;
 const testing = std.testing;
 
-/// unicode character symbol
-const DimensionComponent = enum(u21) {
-    time = 'T',
-    length = 'L',
-    mass = 'M',
-    current = 'I',
-    temp = 'Θ',
-    amount = 'N',
-    luminosity = 'J',
-    angle = 'R',
-    none = '0',
-};
+const DimensionComponent = struct { comptime_int, comptime_int };
 
-fn Dimension(
-    t_in: comptime_int,
-    l_in: comptime_int,
-    m_in: comptime_int,
-    i_in: comptime_int,
-    d_in: comptime_int,
-    n_in: comptime_int,
-    j_in: comptime_int,
-    r_in: comptime_int,
-) type {
+// TODO add assert that components are sorted
+/// Constructs a new dimension. Base dimensions should only have a single component of power 1.
+/// For compound dimensions, the components should be passed sorted by their symbol ascending.
+fn Dimension(comptime components_in: []const DimensionComponent) type {
     return struct {
         const Self = @This();
-        const t = t_in;
-        const l = l_in;
-        const m = m_in;
-        const i = i_in;
-        const d = d_in;
-        const n = n_in;
-        const j = j_in;
-        const r = r_in;
+        const components = components_in;
+
+        fn CombineWith(Dim: type, is_multiply: bool) type {
+            comptime var other_comps: [Dim.components.len]DimensionComponent = undefined;
+            @memcpy(&other_comps, Dim.components);
+
+            // get components from current
+            comptime var new_comps = components;
+
+            // add up overlapping components
+            for (components, 0..) |comp, i| {
+                const ch, const pow = comp;
+                for (other_comps, 0..) |other_comp, j| {
+                    const other_ch, const other_pow = other_comp;
+                    if (ch == other_ch) {
+                        const new_pow = if (is_multiply) pow + other_pow else pow - other_pow;
+                        new_comps = new_comps[0..i] ++ .{.{ ch, new_pow }} ++ new_comps[i + 1 ..];
+                        other_comps[j][1] = 0;
+                    }
+                }
+            }
+
+            // get non-overlapping components from rhs
+            for (other_comps, 0..) |comp, i| {
+                _, const pow = comp;
+                if (pow != 0) {
+                    const comp_to_add = if (is_multiply) blk: {
+                        break :blk &[_]DimensionComponent{.{ other_comps[i][0], other_comps[i][1] }};
+                    } else blk: {
+                        break :blk &[_]DimensionComponent{.{ other_comps[i][0], other_comps[i][1] * -1 }};
+                    };
+                    new_comps = new_comps ++ comp_to_add;
+                }
+            }
+
+            // TODO use better sort and pull this out to it's own function
+            comptime var sorted_comps: []const DimensionComponent = &[_]DimensionComponent{};
+            for (new_comps) |comp| {
+                const ch, const pow = comp;
+                if (pow != 0) {
+                    comptime var idx = sorted_comps.len;
+                    for (sorted_comps, 0..) |scomp, j| {
+                        const sch, _ = scomp;
+                        if (sch > ch) {
+                            idx = j;
+                            break;
+                        }
+                    }
+                    sorted_comps = sorted_comps[0..idx] ++ &[_]DimensionComponent{comp} ++ sorted_comps[idx..];
+                }
+            }
+
+            return Dimension(sorted_comps);
+        }
 
         pub fn MultipliedBy(Dim: type) type {
-            return Dimension(
-                t + Dim.t,
-                l + Dim.l,
-                m + Dim.m,
-                i + Dim.i,
-                d + Dim.d,
-                n + Dim.n,
-                j + Dim.j,
-                r + Dim.r,
-            );
+            return CombineWith(Dim, true);
         }
 
         pub fn DividedBy(Dim: type) type {
-            return Dimension(
-                t - Dim.t,
-                l - Dim.l,
-                m - Dim.m,
-                i - Dim.i,
-                d - Dim.d,
-                n - Dim.n,
-                j - Dim.j,
-                r - Dim.r,
-            );
+            return CombineWith(Dim, false);
         }
 
         pub inline fn isBase() bool {
-            const sum = @abs(t) + @abs(l) + @abs(m) + @abs(i) + @abs(d) + @abs(n) + @abs(j) + @abs(r);
-            return sum == 1 or sum == 0;
+            return components.len == 1 and components[0][1] == 1;
         }
 
         pub fn str() []const u8 {
-            return std.fmt.comptimePrint(
-                "{u}:{d},{u}:{d},{u}:{d},{u}:{d},{u}:{d},{u}:{d},{u}:{d},{u}:{d}",
-                .{
-                    @intFromEnum(DimensionComponent.time),       t,
-                    @intFromEnum(DimensionComponent.length),     l,
-                    @intFromEnum(DimensionComponent.mass),       m,
-                    @intFromEnum(DimensionComponent.current),    i,
-                    @intFromEnum(DimensionComponent.temp),       d,
-                    @intFromEnum(DimensionComponent.amount),     n,
-                    @intFromEnum(DimensionComponent.luminosity), j,
-                    @intFromEnum(DimensionComponent.angle),      r,
-                },
-            );
+            comptime var str_out: []const u8 = "";
+            comptime for (components) |comp| {
+                str_out = str_out ++ fmt.comptimePrint("{u}:{d},", comp);
+            };
+            return str_out[0 .. str_out.len - 1]; // discard hanging comma
         }
     };
 }
 
 /// Used to create a dimension orthogonal to all other existing base dimensions.
-/// This can be used to add custom dimensions (e.g. dollars), or encode semantics
+/// This can be used to add custom dimensions (e.g. money), or encode semantics
 /// into an existing dimension to treat them as orthogonal.
-fn BaseDimension(comptime dim: DimensionComponent) type {
-    const Dim = Dimension(
-        if (dim == .time) 1 else 0,
-        if (dim == .length) 1 else 0,
-        if (dim == .mass) 1 else 0,
-        if (dim == .current) 1 else 0,
-        if (dim == .temp) 1 else 0,
-        if (dim == .amount) 1 else 0,
-        if (dim == .luminosity) 1 else 0,
-        if (dim == .angle) 1 else 0,
-    );
-    const dims = Dim.t + Dim.l + Dim.m + Dim.i + Dim.d + Dim.n + Dim.j;
-    comptime std.debug.assert(dims != 1 or dims != 0);
-    return Dim;
+/// The symbol should be a unicode character.
+fn BaseDimension(comptime symbol: u21) type {
+    const dims: []const DimensionComponent = &[_]DimensionComponent{.{ symbol, 1 }};
+    return Dimension(dims);
 }
 
 // Base Dimensions
-pub const Time = BaseDimension(.time);
-pub const Length = BaseDimension(.length);
-pub const Mass = BaseDimension(.mass);
-pub const Current = BaseDimension(.current);
-pub const Temperature = BaseDimension(.temp);
-pub const Amount = BaseDimension(.amount);
-pub const Luminosity = BaseDimension(.luminosity);
-pub const Angle = BaseDimension(.angle);
-pub const Dimensionless = BaseDimension(.none);
+pub const Dimensionless = Dimension(&[0]DimensionComponent{});
+pub const Time = BaseDimension('T');
+pub const Length = BaseDimension('L');
+pub const Mass = BaseDimension('M');
+pub const Current = BaseDimension('I');
+pub const Temperature = BaseDimension('Θ');
+pub const Amount = BaseDimension('N');
+pub const Luminosity = BaseDimension('J');
+pub const Angle = BaseDimension('R');
 
-// Compound Dimensions
-pub const Velocity = Length.DividedBy(Time);
-pub const Acceleration = Velocity.DividedBy(Time);
-pub const Jerk = Acceleration.DividedBy(Time);
-pub const Snap = Jerk.DividedBy(Time);
-pub const Crackle = Snap.DividedBy(Time);
-pub const Pop = Crackle.DividedBy(Time);
-pub const Goldfish = Pop.DividedBy(Time);
-pub const Force = Mass.MultipliedBy(Acceleration);
-pub const Area = Length.MultipliedBy(Length);
-pub const Pressure = Force.DividedBy(Area);
-pub const Energy = Force.MultipliedBy(Length);
-pub const Power = Energy.DividedBy(Time);
-pub const Charge = Current.MultipliedBy(Time);
-pub const Voltage = Power.DividedBy(Current);
-pub const Capacitance = Charge.DividedBy(Voltage);
-pub const Frequency = Dimensionless.DividedBy(Time);
-pub const Torque = Energy;
-pub const Momentum = Torque.DividedBy(Time);
-pub const Impulse = Momentum;
-pub const MomentOfInertia = Torque.MultipliedBy(Length);
-pub const Resistance = Voltage.DividedBy(Current);
+fn DimensionContainer(DimensionsIn: []type) type {
+    return struct {
+        const Dimensions = DimensionsIn;
+
+        pub fn AddDimensions(DimensionsToAppend: type) type {
+            return DimensionContainer(Dimensions ++ DimensionsToAppend);
+        }
+
+        pub fn AddDimension(DimensionIn: type) type {
+            return DimensionContainer(Dimensions ++ DimensionIn);
+        }
+    };
+}
+
+const DimensionsRegistry = DimensionContainer(.{
+    Time,
+    Length,
+    Mass,
+    Current,
+    Temperature,
+    Amount,
+    Luminosity,
+    Angle,
+});
 
 test "Multiplying dimensions" {
+    const should_be = Dimension(&[_]DimensionComponent{ .{ 'L', 1 }, .{ 'M', 1 } });
     const lm = Length.MultipliedBy(Mass);
-    try testing.expect(lm == Dimension(
-        0,
-        1,
-        1,
-        0,
-        0,
-        0,
-        0,
-        0,
-    ));
+    try testing.expectEqual(
+        lm,
+        should_be,
+    );
+
+    const ml = Mass.MultipliedBy(Length);
+    try testing.expectEqual(
+        ml,
+        should_be,
+    );
 }
 
 test "Dividing dimensions" {
     const tl = Length.DividedBy(Time);
-    try testing.expect(tl == Dimension(
-        -1,
-        1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-    ));
+    try testing.expectEqual(
+        tl,
+        Dimension(&[_]DimensionComponent{ .{ 'L', 1 }, .{ 'T', -1 } }),
+    );
+}
+
+test "Many operations" {
+    const lots = Length.MultipliedBy(Length).MultipliedBy(Time).DividedBy(Time).DividedBy(Current).DividedBy(Current).MultipliedBy(Luminosity);
+    try testing.expectEqual(
+        lots,
+        Dimension(&[_]DimensionComponent{
+            .{ 'I', -2 },
+            .{ 'J', 1 },
+            .{ 'L', 2 },
+        }),
+    );
 }

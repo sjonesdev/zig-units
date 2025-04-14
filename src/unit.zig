@@ -1,4 +1,3 @@
-const pi = @import("std").math.pi;
 const dim = @import("dimension.zig");
 const quantity = @import("quantity.zig");
 
