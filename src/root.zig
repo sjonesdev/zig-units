@@ -3,7 +3,7 @@ const math = std.math;
 const testing = std.testing;
 
 const unit = @import("unit.zig");
-const dim = @import("dimension.zig");
+const dim = @import("lib/dimension.zig");
 const quantity = @import("quantity.zig");
 const Quantity = quantity.Quantity;
 
@@ -17,13 +17,13 @@ pub const Meters = unit.BaseUnit(dim.Length, "meters", "m");
 const meters = Meters.of;
 pub const Kilograms = unit.BaseUnit(dim.Mass, "kilograms", "kg");
 const kilograms = Kilograms.of;
-pub const Amps = unit.BaseUnit(dim.Current, "amps", "A");
+pub const Amps = unit.BaseUnit(dim.ElectricCurrent, "amps", "A");
 const amps = Amps.of;
-pub const Kelvin = unit.BaseUnit(dim.Temperature, "kelvin", "K");
+pub const Kelvin = unit.BaseUnit(dim.ThermodynamicTemperature, "kelvin", "K");
 const kelvin = Kelvin.of;
-pub const Moles = unit.BaseUnit(dim.Amount, "moles", "mol");
+pub const Moles = unit.BaseUnit(dim.AmountOfSubstance, "moles", "mol");
 const moles = Moles.of;
-pub const Candelas = unit.BaseUnit(dim.Luminosity, "candelas", "cd");
+pub const Candelas = unit.BaseUnit(dim.LuminousIntensity, "candelas", "cd");
 const candelas = Candelas.of;
 pub const Rotations = unit.BaseUnit(dim.Angle, "rotations", "rot");
 const rotations = Rotations.of;

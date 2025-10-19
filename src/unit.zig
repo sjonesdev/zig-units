@@ -1,4 +1,4 @@
-const dim = @import("dimension.zig");
+const dim = @import("lib/dimension.zig");
 const quantity = @import("quantity.zig");
 
 // could define a list of special unit names and otherwise rely on dynamic unit representation creation?
@@ -176,4 +176,4 @@ pub fn BaseUnit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const
 }
 
 /// Unit identity
-pub const Unitless = BaseUnit(dim.Dimensionless, "unitless", "u");
+pub const Unitless = BaseUnit(dim.One, "unitless", "u");

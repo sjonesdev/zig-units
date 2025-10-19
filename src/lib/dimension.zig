@@ -12,6 +12,10 @@ fn Dimension(comptime components_in: []const DimensionComponent) type {
         const Self = @This();
         const components = components_in;
 
+        pub inline fn isDimension() bool {
+            return true;
+        }
+
         fn CombineWith(Dim: type, is_multiply: bool) type {
             comptime var other_comps: [Dim.components.len]DimensionComponent = undefined;
             @memcpy(&other_comps, Dim.components);
@@ -96,17 +100,6 @@ fn BaseDimension(comptime symbol: u21) type {
     return Dimension(dims);
 }
 
-// Base Dimensions
-pub const Dimensionless = Dimension(&[0]DimensionComponent{});
-pub const Time = BaseDimension('T');
-pub const Length = BaseDimension('L');
-pub const Mass = BaseDimension('M');
-pub const Current = BaseDimension('I');
-pub const Temperature = BaseDimension('Θ');
-pub const Amount = BaseDimension('N');
-pub const Luminosity = BaseDimension('J');
-pub const Angle = BaseDimension('R');
-
 fn DimensionContainer(DimensionsIn: []type) type {
     return struct {
         const Dimensions = DimensionsIn;
@@ -121,19 +114,23 @@ fn DimensionContainer(DimensionsIn: []type) type {
     };
 }
 
-const DimensionsRegistry = DimensionContainer(.{
-    Time,
-    Length,
-    Mass,
-    Current,
-    Temperature,
-    Amount,
-    Luminosity,
-    Angle,
-});
+pub const One = Dimension(&[0]DimensionComponent{});
+
+// const DimensionsRegistry = DimensionContainer(.{
+//     Time,
+//     Length,
+//     Mass,
+//     Current,
+//     Temperature,
+//     Amount,
+//     Luminosity,
+//     Angle,
+// });
 
 test "Multiplying dimensions" {
     const should_be = Dimension(&[_]DimensionComponent{ .{ 'L', 1 }, .{ 'M', 1 } });
+    const Length = BaseDimension('L');
+    const Mass = BaseDimension('M');
     const lm = Length.MultipliedBy(Mass);
     try testing.expectEqual(
         lm,
@@ -148,6 +145,8 @@ test "Multiplying dimensions" {
 }
 
 test "Dividing dimensions" {
+    const Length = BaseDimension('L');
+    const Time = BaseDimension('T');
     const tl = Length.DividedBy(Time);
     try testing.expectEqual(
         tl,
@@ -156,6 +155,10 @@ test "Dividing dimensions" {
 }
 
 test "Many operations" {
+    const Length = BaseDimension('L');
+    const Time = BaseDimension('T');
+    const Current = BaseDimension('I');
+    const Luminosity = BaseDimension('J');
     const lots = Length.MultipliedBy(Length).MultipliedBy(Time).DividedBy(Time).DividedBy(Current).DividedBy(Current).MultipliedBy(Luminosity);
     try testing.expectEqual(
         lots,
