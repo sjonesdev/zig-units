@@ -11,7 +11,7 @@ const quantity = @import("quantity.zig");
 /// offset_in - the value that must be added to the unit (after being multiplied) to convert to it's base unit
 pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8, multiplier_in: comptime_float, offset_in: comptime_float) type {
     return struct {
-        const Self = @This();
+        const This = @This();
         pub const Dimension = DimensionIn;
         pub const name = name_in;
         pub const abbreviation = abbreviation_in;
@@ -24,7 +24,7 @@ pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8,
         /// current unit
         pub fn ScaledTo(unit_name: []const u8, unit_abbreviation: []const u8, scale_factor: comptime_float) type {
             return Unit(
-                Self.Dimension,
+                This.Dimension,
                 unit_name,
                 unit_abbreviation,
                 scale_factor * multiplier,
@@ -37,7 +37,7 @@ pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8,
         /// value of the new unit equal to 0 of the old unit.
         pub fn OffsetTo(unit_name: []const u8, unit_abbreviation: []const u8, offset_value: comptime_float) type {
             return Unit(
-                Self.Dimension,
+                This.Dimension,
                 unit_name,
                 unit_abbreviation,
                 multiplier,
@@ -65,7 +65,7 @@ pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8,
 
         /// Inverse, Unit^(-1)
         pub fn Inv() type {
-            return Unitless.Per(Self);
+            return Unitless.Per(This);
         }
 
         /// Unit^(power), power > 0
@@ -73,9 +73,9 @@ pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8,
             if (power <= 0) {
                 @compileError("ToThe only supports integers >0");
             }
-            var Result = Self;
+            var Result = This;
             for (1..power) |_| {
-                Result = Result.Of(Self);
+                Result = Result.Of(This);
             }
             return Result;
         }
@@ -87,7 +87,7 @@ pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8,
             }
             var Result = Inv();
             for (1..power) |_| {
-                Result = Result.Per(Self);
+                Result = Result.Per(This);
             }
             return Result;
         }
@@ -107,7 +107,7 @@ pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8,
         /// display name and abbreviation
         pub fn Named(new_name: []const u8, new_abbreviation: []const u8) type {
             return Unit(
-                Self.Dimension,
+                This.Dimension,
                 new_name,
                 new_abbreviation,
                 multiplier,
@@ -118,7 +118,7 @@ pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8,
         /// Makes a version of this unit with a different display abbreviation
         pub fn Abbreviated(new_abbreviation: []const u8) type {
             return Unit(
-                Self.Dimension,
+                This.Dimension,
                 name,
                 new_abbreviation,
                 multiplier,
@@ -127,12 +127,12 @@ pub fn Unit(DimensionIn: type, name_in: []const u8, abbreviation_in: []const u8,
         }
 
         pub inline fn equals(OtherUnit: type) bool {
-            return Self.multiplier == OtherUnit.multiplier and Self.offset == OtherUnit.offset;
+            return This.multiplier == OtherUnit.multiplier and This.offset == OtherUnit.offset;
         }
 
         /// Make a quantity of this unit with the underlying type
         /// as that of the value passed
-        pub inline fn of(value: anytype) quantity.Quantity(Self, @TypeOf(value)) {
+        pub inline fn of(value: anytype) quantity.Quantity(This, @TypeOf(value)) {
             return .{ .value = value };
         }
     };

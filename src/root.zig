@@ -7,6 +7,12 @@ const dim = @import("lib/dimension.zig");
 const quantity = @import("quantity.zig");
 const Quantity = quantity.Quantity;
 
+// note how std library does user extendable definitions, can likely do something like this to provider a default unit registry
+// that is extensible by the user
+// could also use this to register serializers probably
+// this is in std.zig
+// pub const options: Options = if (@hasDecl(root, "std_options")) root.std_options else .{};
+
 // TODO can i utilize integer ratios instead of floats for scale factors
 // Base Units
 pub const Unitless = unit.Unitless;

@@ -9,7 +9,7 @@ pub const DimCurrent = dim.BaseDimension('I'); // TODO should this be ElectricCu
 pub const DimTemperature = dim.BaseDimension('Θ'); // TODO should this be ThermodynamicTemperature?
 pub const DimAmount = dim.BaseDimension('N'); // TODO should this be AmountOfSubstance?
 pub const DimLuminosity = dim.BaseDimension('J'); // TODO should this be LuminousIntensity?
-pub const DimAngle = dim.BaseDimension('R');
+pub const DimAngle = dim.BaseDimension('R'); // TODO move this to angular system?
 
 pub const Time = qs.BaseQuantitySpec("time", DimTime);
 pub const Duration = Time;

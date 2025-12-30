@@ -2,14 +2,12 @@ const dim = @import("dimension.zig");
 const std = @import("std");
 const mem = std.mem;
 const fmt = std.fmt;
+const eqn = @import("equation.zig");
+const Equation = eqn.Equation;
+const BaseEquation = eqn.BaseEquation;
 
 // TODO should this be in base?
 pub const Dimensionless = BaseQuantitySpec("one", dim.One);
-
-const QuantityComponent = struct {
-    Quantity: type,
-    power: comptime_int,
-};
 
 pub const QuantityCharacter = enum {
     scalar, // TODO rename to real_scalar?
@@ -17,155 +15,6 @@ pub const QuantityCharacter = enum {
     vector,
     tensor,
 };
-
-// TODO maybe rename this to derivation?
-const Equation = struct {
-    components: []QuantityComponent,
-
-    fn findComponentOfQuantity(self: Equation, OfQuantity: type) ?usize {
-        for (self.components, 0..) |comp, i| {
-            if (comp.Quantity == OfQuantity) return i;
-        }
-        return null;
-    }
-
-    // TODO sort output
-    // TODO should we be excluding 0 values? probably not?
-    // TODO this should allow for power=0 values, at least in some cases
-    pub fn Times(self: Equation, RhsQuantity: type) Equation {
-        // TODO could switch this to use TimesEqn under the hood
-        if (self.findComponentOfQuantity(RhsQuantity)) |idx| {
-            comptime var new_comps: [self.components.len]QuantityComponent = undefined;
-            @memcpy(&new_comps, &self.components);
-            new_comps[idx].power += 1;
-            const num_new_comps = if (new_comps[idx].power == 0) blk: {
-                for (new_comps[idx + 1 ..], idx..) |comp, i| {
-                    new_comps[i] = comp;
-                }
-                break :blk new_comps.len - 1;
-            } else new_comps.len;
-            return Equation{ .components = new_comps[0..num_new_comps] };
-        } else {
-            comptime var new_comps: [self.components.len + 1]QuantityComponent = undefined;
-            for (self.components, 0..) |comp, i| {
-                if (mem.lessThan(u8, RhsQuantity.name, comp.Quantity.name)) {
-                    new_comps[i] = self.components[i];
-                } else {
-                    new_comps[i] = QuantityComponent{ .power = 1, .Quantity = RhsQuantity };
-                    @memcpy(new_comps[i + 1 ..], self.components[i..]);
-                }
-            }
-            return Equation{ .components = new_comps };
-        }
-    }
-
-    pub fn TimesEqn(self: Equation, Rhs: Equation) Equation {
-        // assume equations are sorted
-        comptime var l = 0;
-        comptime var r = 0;
-        comptime var numComps = 0;
-
-        // count components
-        while (l < self.components.len and r < Rhs.components.len) {
-            if (self.components[l].Quantity == self.components[r].Quantity) {
-                l += 1;
-                r += 1;
-            } else if (mem.lessThan(u8, self.components[l].Quantity.name, Rhs.components[r].Quantity.name)) {
-                l += 1;
-            } else {
-                r += 1;
-            }
-            numComps += 1;
-        }
-        if (l == self.components.len) {
-            numComps += self.components.len - l;
-        } else if (r == Rhs.components.len) {
-            numComps += Rhs.components.len - r;
-        } else {
-            @compileError(fmt.comptimePrint("Failed to multiple equations: {} and {}", .{ self, Rhs }));
-        }
-
-        // make new components
-        comptime var comps: [numComps]QuantityComponent = undefined;
-        l = 0;
-        r = 0;
-        comptime var i = 0;
-        while (l < self.components.len and r < Rhs.components.len) {
-            if (self.components[l].Quantity == self.components[r].Quantity) {
-                comps[i] = QuantityComponent{
-                    .Quantity = self.components[l].Quantity,
-                    .power = self.components[l].power + Rhs.components[r].power,
-                };
-                l += 1;
-                r += 1;
-            } else if (mem.lessThan(u8, self.components[l].Quantity.name, Rhs.components[r].Quantity.name)) {
-                comps[i] = self.components[l];
-                l += 1;
-            } else {
-                comps[i] = self.components[r];
-                r += 1;
-            }
-            i += 1;
-        }
-        if (l == self.components.len) {
-            @memcpy(comps[i..], Rhs.components[r..]);
-        } else if (r == Rhs.components.len) {
-            @memcpy(comps[i..], self.components[l..]);
-        } else {
-            @compileError(fmt.comptimePrint("Failed to multiple equations: {} and {}", .{ self, Rhs }));
-        }
-    }
-
-    pub fn Div(self: Equation, RhsQuantity: type) Equation {
-        // TODO could switch this to use Inverse and TimesEqn
-        if (self.findComponentOfQuantity(RhsQuantity)) |idx| {
-            comptime var new_comps: [self.components.len]QuantityComponent = undefined;
-            @memcpy(&new_comps, &self.components);
-            new_comps[idx].power -= 1;
-            const num_new_comps = if (new_comps[idx].power == 0) blk: {
-                for (new_comps[idx + 1 ..], idx..) |comp, i| {
-                    new_comps[i] = comp;
-                }
-                break :blk new_comps.len - 1;
-            } else new_comps.len;
-            return Equation{ .components = new_comps[0..num_new_comps] };
-        } else {
-            comptime var new_comps: [self.components.len + 1]QuantityComponent = undefined;
-            for (self.components, 0..) |comp, i| {
-                if (mem.lessThan(u8, RhsQuantity.name, comp.Quantity.name)) {
-                    new_comps[i] = self.components[i];
-                } else {
-                    new_comps[i] = QuantityComponent{ .power = -1, .Quantity = RhsQuantity };
-                    @memcpy(new_comps[i + 1 ..], self.components[i..]);
-                }
-            }
-            return Equation{ .components = new_comps };
-        }
-    }
-
-    pub fn DivEqn(self: Equation, Rhs: Equation) Equation {
-        return self.Times(Rhs.Inverse());
-    }
-
-    pub fn Pow(self: Equation, n: comptime_int) Equation {
-        comptime var comps: [self.components.len]QuantityComponent = undefined;
-        for (self.components, 0..) |comp, i| {
-            comps[i] = comp;
-            comps[i].power *= n;
-        }
-        return comps;
-    }
-
-    pub fn Inverse(self: Equation) Equation {
-        return self.Pow(-1);
-    }
-
-    pub fn Sqrt(self: Equation) Equation {
-        return self.Pow(-2);
-    }
-};
-
-pub const BaseEquation = Equation{ .components = .{} };
 
 /// Child quantity specs are those that are not root nodes in a quantity tree of a kind
 ///
@@ -274,9 +123,10 @@ fn QuantitySpec(name_in: []const u8, ParentIn: type, equation_in: Equation, char
 
         pub fn Pow(n: comptime_int) Equation {
             // @compileError(fmt.comptimePrint("{s}.Pow({d}): n must be >0", .{ @typeName(This), n }));
-            return Equation{
-                .components = .{QuantityComponent{ .power = n, .Quantity = This }},
-            };
+            // return Equation{
+            //     .components = .{QuantityComponent{ .power = n, .Quantity = This }},
+            // };
+            return BaseEquation.Times(This).Pow(n);
         }
 
         pub fn Inverse() Equation {
@@ -304,13 +154,6 @@ fn QuantitySpec(name_in: []const u8, ParentIn: type, equation_in: Equation, char
         }
     };
 }
-
-/// this is used as a parameter type in mp-units to say you accept a kind of the quantity instead
-/// of only a specific quantity
-/// idk how to make that work in zig yet
-pub const Kind = struct {
-    QuantitySpec: type,
-};
 
 // TODO assert parents are sorted -- maybe this doesn't matter
 // TODO make merging logic work right in terms of adding up powers of quantities

@@ -9,7 +9,7 @@ const DimensionComponent = struct { comptime_int, comptime_int };
 /// For compound dimensions, the components should be passed sorted by their symbol ascending.
 fn Dimension(comptime components_in: []const DimensionComponent) type {
     return struct {
-        const Self = @This();
+        const This = @This();
         const components = components_in;
 
         pub inline fn isDimension() bool {

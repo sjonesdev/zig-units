@@ -1,33 +1,43 @@
 const unit = @import("../../lib/unit.zig");
-const quantity = @import("../../lib/quantity.zig");
-const base = @import("../isq/base.zig");
+const q = @import("../../lib/quantity.zig");
+const qp = @import("../../lib/quantity_point.zig");
+const isq = @import("../isq.zig");
 
 const Unit = unit.Unit;
-const Kind = quantity.Kind;
+const Kilo = unit.Kilo;
 
-pub const Unitless = Unit("", "", Kind(base.Scalar));
+pub const Unitless = Unit("", "", q.KindOf(isq.base.Scalar));
 
-// // base units
+// base units
 // inline constexpr struct second final : named_unit<"s", kind_of<isq::time>> {} second;
-pub const Second = Unit("second", "s", Kind(base.Time));
-
+pub const Second = unit.Named("second", "s", q.KindOf(isq.base.Time));
 // inline constexpr struct metre final : named_unit<"m", kind_of<isq::length>> {} metre;
-pub const Meter = Unit("meter", "m", Kind(base.Length));
+pub const Meter = unit.Named("meter", "m", q.KindOf(isq.base.Length));
 // inline constexpr struct gram final : named_unit<"g", kind_of<isq::mass>> {} gram;
-pub const Gram = Unit("gram", "g", Kind(base.Mass));
+pub const Gram = unit.Named("gram", "g", q.KindOf(isq.base.Mass));
+
 // inline constexpr auto kilogram = kilo<gram>;
+pub const Kilogram = unit.Kilo(Gram);
 // inline constexpr struct ampere final : named_unit<"A", kind_of<isq::electric_current>> {} ampere;
+pub const Ampere = unit.Named("ampere", "A", q.KindOf(isq.base.ElectricCurrent));
 
 // inline constexpr struct absolute_zero final : absolute_point_origin<isq::thermodynamic_temperature> {} absolute_zero;
+pub const AbsoluteZero = qp.AbsolutePointOrigin(isq.base.ThermodynamicTemperature);
 // inline constexpr auto zeroth_kelvin  = absolute_zero;
+pub const ZerothKelvin = AbsoluteZero;
 // inline constexpr struct kelvin final : named_unit<"K", kind_of<isq::thermodynamic_temperature>, zeroth_kelvin> {} kelvin;
+pub const Kelvin = unit.NamedWithOrigin("kelvin", "K", q.KindOf(isq.base.ThermodynamicTemperature), ZerothKelvin);
 
 // inline constexpr struct mole final : named_unit<"mol", kind_of<isq::amount_of_substance>> {} mole;
+pub const Mole = unit.Named("mole", "mol", q.KindOf(isq.base.AmountOfSubstance));
 // inline constexpr struct candela final : named_unit<"cd", kind_of<isq::luminous_intensity>> {} candela;
+pub const Candela = unit.Named("candela", "cd", q.KindOf(isq.base.LuminousIntensity));
 
 // // derived named units
 // inline constexpr struct radian final : named_unit<"rad", metre / metre, kind_of<isq::angular_measure>> {} radian;
+pub const Radian = unit.Named("radian", "rad", q.KindOf(isq.si.AngularMeasure));
 // inline constexpr struct steradian final : named_unit<"sr", square(metre) / square(metre), kind_of<isq::solid_angular_measure>> {} steradian;
+pub const Hertz = unit.NamedWithEquation("hertz", "Hz", Meter, q.KindOf(isq.si.Frequency));
 // inline constexpr struct hertz final : named_unit<"Hz", one / second, kind_of<isq::frequency>> {} hertz;
 // inline constexpr struct newton final : named_unit<"N", kilogram * metre / square(second)> {} newton;
 // #ifdef pascal
@@ -87,3 +97,22 @@ pub const Gram = Unit("gram", "g", Kind(base.Mass));
 // // neper
 // // bel
 // // decibel
+// // clang-format on
+
+// }  // namespace non_si
+
+// namespace si {
+
+// // Non-SI units are accepted for use with SI
+// using namespace non_si;
+
+// }  // namespace si
+
+// template<>
+// MP_UNITS_INLINE constexpr bool space_before_unit_symbol<non_si::degree> = false;
+// template<>
+// MP_UNITS_INLINE constexpr bool space_before_unit_symbol<non_si::arcminute> = false;
+// template<>
+// MP_UNITS_INLINE constexpr bool space_before_unit_symbol<non_si::arcsecond> = false;
+
+// }  // namespace mp_units
