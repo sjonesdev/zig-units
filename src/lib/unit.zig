@@ -90,7 +90,7 @@ fn Unit(
         ///
         /// Will be null for base units, as a base unit's derivation
         /// is just itself
-        pub const equation = equation_in orelse eqn.BaseEquation.Times(This);
+        pub const equation = equation_in orelse eqn.one.times(This);
 
         /// Optional global origin point for this unit. This should
         /// only be used for units that represent absolute quantities,

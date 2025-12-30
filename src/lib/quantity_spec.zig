@@ -3,8 +3,6 @@ const std = @import("std");
 const mem = std.mem;
 const fmt = std.fmt;
 const eqn = @import("equation.zig");
-const Equation = eqn.Equation;
-const BaseEquation = eqn.BaseEquation;
 
 // TODO should this be in base?
 pub const Dimensionless = BaseQuantitySpec("one", dim.One);
@@ -23,14 +21,18 @@ pub inline fn ChildQuantitySpec(name: []const u8, Parent: type) type {
     return QuantitySpec(name, Parent, Parent.equation, Parent.character);
 }
 
+test ChildQuantitySpec {}
+
 /// Child quantity specs are those that are not root nodes in a quantity tree of a kind
 ///
 /// The parent represents the node in the quantity hierarchy this quantity inherits from,
 /// while the equation denotes the formulation of this quantity
-pub inline fn ChildQuantitySpecWithEquation(name: []const u8, Parent: type, equation: Equation) type {
+pub inline fn ChildQuantitySpecWithEquation(name: []const u8, Parent: type, equation: eqn.Equation) type {
     // TODO validate equation
     return QuantitySpec(name, Parent, equation, Parent.character);
 }
+
+test ChildQuantitySpecWithEquation {}
 
 /// Child quantity specs are those that are not root nodes in a quantity tree of a kind
 ///
@@ -39,17 +41,21 @@ pub inline fn ChildQuantitySpecOfCharacter(name: []const u8, Parent: type, chara
     return QuantitySpec(name, Parent, Parent.equation, character);
 }
 
+test ChildQuantitySpecOfCharacter {}
+
 /// Child quantity specs are those that are not root nodes in a quantity tree of a kind
 ///
 /// The parent represents the node in the quantity hierarchy this quantity inherits from,
 /// while the equation denotes the formulation of this quantity
-pub inline fn ChildQuantitySpecWithEquationOfCharacter(name: []const u8, Parent: type, equation: Equation, character: QuantityCharacter) type {
+pub inline fn ChildQuantitySpecWithEquationOfCharacter(name: []const u8, Parent: type, equation: eqn.Equation, character: QuantityCharacter) type {
     // TODO validate equation
     return QuantitySpec(name, Parent, equation, character);
 }
 
+test ChildQuantitySpecWithEquationOfCharacter {}
+
 /// Derived quantity specs become root nodes in a new quantity tree/hierarchy of a kind
-pub inline fn DerivedQuantitySpec(name: []const u8, equation: Equation) type {
+pub inline fn DerivedQuantitySpec(name: []const u8, equation: eqn.Equation) type {
     comptime var Dimension = dim.One;
     for (equation) |comp| {
         if (comp.power > 0) {
@@ -66,8 +72,10 @@ pub inline fn DerivedQuantitySpec(name: []const u8, equation: Equation) type {
     return QuantitySpec(name, Dimension, equation);
 }
 
+test DerivedQuantitySpec {}
+
 /// Derived quantity specs become root nodes in a new quantity tree/hierarchy of a kind
-pub inline fn DerivedQuantitySpecOfCharacter(name: []const u8, equation: Equation, character: QuantityCharacter) type {
+pub inline fn DerivedQuantitySpecOfCharacter(name: []const u8, equation: eqn.Equation, character: QuantityCharacter) type {
     comptime var Dimension = dim.One;
     for (equation) |comp| {
         if (comp.power > 0) {
@@ -83,15 +91,19 @@ pub inline fn DerivedQuantitySpecOfCharacter(name: []const u8, equation: Equatio
     return QuantitySpec(name, Dimension, equation, character);
 }
 
+test DerivedQuantitySpecOfCharacter {}
+
 /// Base quantity specs are root nodes in a quantity tree/hierarchy, also known as "kinds"
 pub inline fn BaseQuantitySpec(name: []const u8, BaseDimension: type) type {
-    return QuantitySpec(name, BaseDimension, BaseEquation, QuantityCharacter.scalar);
+    return QuantitySpec(name, BaseDimension, eqn.one, QuantityCharacter.scalar);
 }
+
+test BaseQuantitySpec {}
 
 /// The parent should be a Dimension or Quantity
 ///
 /// Most quantities should be of scalar character
-fn QuantitySpec(name_in: []const u8, ParentIn: type, equation_in: Equation, character_in: QuantityCharacter) type {
+fn QuantitySpec(name_in: []const u8, ParentIn: type, equation_in: eqn.Equation, character_in: QuantityCharacter) type {
     // TODO validation that parent, equation, and character are valid
     const DimensionIn = if (ParentIn.isDimension()) ParentIn else ParentIn.Dimension;
 
@@ -121,107 +133,53 @@ fn QuantitySpec(name_in: []const u8, ParentIn: type, equation_in: Equation, char
             return false;
         }
 
-        pub fn Pow(n: comptime_int) Equation {
-            // @compileError(fmt.comptimePrint("{s}.Pow({d}): n must be >0", .{ @typeName(This), n }));
-            // return Equation{
-            //     .components = .{QuantityComponent{ .power = n, .Quantity = This }},
-            // };
-            return BaseEquation.Times(This).Pow(n);
+        pub fn pow(n: comptime_int) eqn.Equation {
+            return eqn.one.times(This).pow(n);
         }
 
-        pub fn Inverse() Equation {
-            return This.Pow(-1);
+        pub fn inverse() eqn.Equation {
+            return This.pow(-1);
         }
 
-        pub fn Sqrt() Equation {
-            return This.Pow(-2);
+        pub fn sqrt() eqn.Equation {
+            return This.pow(-2);
         }
 
-        pub fn Times(Rhs: type) Equation {
-            return Pow(1).Times(Rhs);
+        pub fn times(Rhs: type) eqn.Equation {
+            return pow(1).times(Rhs);
         }
 
-        pub fn TimesEqn(Rhs: Equation) Equation {
-            return Pow(1).TimesEqn(Rhs);
+        pub fn timesEqn(rhs: eqn.Equation) eqn.Equation {
+            return pow(1).timesEqn(rhs);
         }
 
-        pub fn Div(Rhs: type) Equation {
-            return Pow(1).Div(Rhs);
+        pub fn div(Rhs: type) eqn.Equation {
+            return pow(1).div(Rhs);
         }
 
-        pub fn DivEqn(Rhs: Equation) Equation {
-            return Pow(1).DivEqn(Rhs);
+        pub fn divEqn(rhs: eqn.Equation) eqn.Equation {
+            return pow(1).divEqn(rhs);
         }
     };
 }
 
-// TODO assert parents are sorted -- maybe this doesn't matter
-// TODO make merging logic work right in terms of adding up powers of quantities
-// pub fn Quantity(name_in: []const u8, DimensionIn: type, ParentsIn: []QuantityComponent) type {
-//     return struct {
-//         const Self = @This();
-//         pub const Dimension = DimensionIn;
-//         const Parents = ParentsIn;
-//         const name = name_in;
+test "QuantitySpec multiplication doesn't compose their derivations" {}
 
-//         pub fn Times(new_name: []const u8, OtherQuantity: type) type {
-//             return Quantity(
-//                 new_name,
-//                 Dimension.MultipliedBy(OtherQuantity.Dimension),
-//                 .{ Self, OtherQuantity }, // TODO sort
-//             );
-//         }
+test "QuantitySpec.isDimension" {}
 
-//         pub fn Pow(new_name: []const u8, power: comptime_int) type {
-//             var Dim = dim.Dimensionless;
-//             for (0..@abs(power)) |_| {
-//                 Dim = Dim.MultipliedBy(Dimension);
-//             }
-//             if (power < 0) Dim = dim.Dimensionless.DividedBy(Dim);
-//             return Quantity(new_name, Dim, .{ .Quantity = Self, .power = power });
-//         }
+test "QuantitySpec.pow" {}
 
-//         pub fn Div(new_name: []const u8, OtherQuantity: type) type {
-//             return Quantity(
-//                 new_name,
-//                 Dimension.DividedBy(OtherQuantity.Dimension),
-//                 .{ .{ .Quantity = Self, .power = 1 }, .{ .Quantity = OtherQuantity, .power = -1 } }, // TODO sort
-//             );
-//         }
+test "QuantitySpec.inverse" {}
 
-//         pub fn Inverse(new_name: []const u8) type {
-//             return Pow(new_name, -1);
-//         }
+test "QuantitySpec.sqrt" {}
 
-//         pub fn Child(new_name: []const u8) type {
-//             return Quantity(new_name, Dimension, .{.{ .Quantity = Self, .power = 1 }});
-//         }
-//     };
-// }
+test "QuantitySpec.times" {}
 
-// pub fn BaseQuantity(name: []const u8, BaseDimensionIn: type) type {
-//     return Quantity(name, BaseDimensionIn, .{});
-// }
+test "QuantitySpec.timesEqn" {}
 
-// pub fn Compose(new_name: []const u8, Quantities: []QuantityComponent) type {
-//     var Dim = dim.DimensionOne;
-//     for (Quantities) |Q| {
-//         if (Q.power < 0) {
-//             for (0..@abs(Q.power)) |_| {
-//                 Dim = Dim.DividedBy(Q.Dimension);
-//             }
-//         } else if (Q.power > 0) {
-//             for (0..Q.power) |_| {
-//                 Dim = Dim.MultipliedBy(Q.Dimension);
-//             }
-//         }
-//     }
-//     return Quantity(
-//         new_name,
-//         Dim,
-//         Quantities, // TODO sort
-//     );
-// }
+test "QuantitySpec.div" {}
+
+test "QuantitySpec.divEqn" {}
 
 // When we say hierarchy, we mean hierarchy tree of quantities of the same kind, but that's a mouth (hand?) full
 // All quantities have a character, e.g. scalar, vector, tensor. Scalar is the default

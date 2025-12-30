@@ -21,11 +21,10 @@ const Component = struct {
     }
 };
 
-// TODO maybe rename this to derivation?
 const Equation = struct {
     components: []const Component,
 
-    pub fn Of(Type: type) Equation {
+    fn of(Type: type) Equation {
         return Equation{
             .components = &[_]Component{
                 Component{
@@ -36,7 +35,7 @@ const Equation = struct {
         };
     }
 
-    pub fn TimesEqn(self: Equation, rhs: Equation) Equation {
+    pub fn timesEqn(self: Equation, rhs: Equation) Equation {
         // assume equations are sorted
         comptime var l = 0;
         comptime var r = 0;
@@ -100,19 +99,19 @@ const Equation = struct {
         return Equation{ .components = &comps_final };
     }
 
-    pub fn DivEqn(self: Equation, rhs: Equation) Equation {
-        return self.TimesEqn(rhs.Inverse());
+    pub fn divEqn(self: Equation, rhs: Equation) Equation {
+        return self.timesEqn(rhs.inverse());
     }
 
-    pub fn Times(self: Equation, Type: type) Equation {
-        return self.TimesEqn(Equation.Of(Type));
+    pub fn times(self: Equation, Type: type) Equation {
+        return self.timesEqn(Equation.of(Type));
     }
 
-    pub fn Div(self: Equation, Type: type) Equation {
-        return self.TimesEqn(Equation.Of(Type).Inverse());
+    pub fn div(self: Equation, Type: type) Equation {
+        return self.timesEqn(Equation.of(Type).inverse());
     }
 
-    pub fn Pow(self: Equation, n: comptime_int) Equation {
+    pub fn pow(self: Equation, n: comptime_int) Equation {
         comptime var comps: [self.components.len]Component = undefined;
         for (self.components, 0..) |comp, i| {
             comps[i] = comp;
@@ -122,12 +121,12 @@ const Equation = struct {
         return Equation{ .components = &comps_final };
     }
 
-    pub fn Inverse(self: Equation) Equation {
-        return self.Pow(-1);
+    pub fn inverse(self: Equation) Equation {
+        return self.pow(-1);
     }
 
-    pub fn Sqrt(self: Equation) Equation {
-        return self.Pow(-2);
+    pub fn sqrt(self: Equation) Equation {
+        return self.pow(-2);
     }
 
     pub fn fullStr(self: Equation) []const u8 {
@@ -141,7 +140,7 @@ const Equation = struct {
     }
 };
 
-pub const BaseEquation = Equation{ .components = .{} };
+pub const one = Equation{ .components = .{} };
 
 test "Equation.TimesEqn" {
     const Type1 = struct {};
@@ -163,7 +162,7 @@ test "Equation.TimesEqn" {
         .{ .Type = Type4, .power = 1 },
     } };
 
-    const eqn3 = eqn1.TimesEqn(eqn2);
+    const eqn3 = eqn1.timesEqn(eqn2);
     const expected_eqn3 = Equation{
         .components = &[_]Component{
             .{ .Type = Type1, .power = 0 },
@@ -207,7 +206,7 @@ test "Equation.DivEqn" {
         .{ .Type = Type6, .power = 10 },
     } };
 
-    const eqn3 = eqn1.DivEqn(eqn2);
+    const eqn3 = eqn1.divEqn(eqn2);
     const expected_eqn3 = Equation{
         .components = &[_]Component{
             .{ .Type = Type1, .power = 4 },
@@ -245,7 +244,7 @@ test "Equation.Times" {
         .{ .Type = Type5, .power = 0 },
     } };
 
-    const eqn3 = eqn1.Times(Type4);
+    const eqn3 = eqn1.times(Type4);
     const expected_eqn3 = Equation{
         .components = &[_]Component{
             .{ .Type = Type1, .power = 2 },
@@ -281,7 +280,7 @@ test "Equation.Div" {
         .{ .Type = Type5, .power = 0 },
     } };
 
-    const eqn3 = eqn1.Div(Type4);
+    const eqn3 = eqn1.div(Type4);
     const expected_eqn3 = Equation{
         .components = &[_]Component{
             .{ .Type = Type1, .power = 2 },
@@ -316,7 +315,7 @@ test "Equation.Pow" {
         .{ .Type = Type4, .power = 0 },
     } };
 
-    const eqn2 = eqn1.Pow(-4);
+    const eqn2 = eqn1.pow(-4);
     const expected_eqn2 = Equation{
         .components = &[_]Component{
             .{ .Type = Type1, .power = -8 },
@@ -335,7 +334,7 @@ test "Equation.Pow" {
     try std.testing.expectEqualStrings(expected_eqn2.fullStr(), eqn2.fullStr());
     try std.testing.expectEqualStrings(expected_eqn2_str, eqn2.fullStr());
 
-    const eqn3 = eqn1.Pow(3);
+    const eqn3 = eqn1.pow(3);
     const expected_eqn3 = Equation{
         .components = &[_]Component{
             .{ .Type = Type1, .power = 6 },
