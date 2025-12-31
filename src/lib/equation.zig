@@ -16,12 +16,16 @@ const Component = struct {
         return name ++ "^" ++ pow_str;
     }
 
-    fn lessThan(_: anytype, lhs: Component, rhs: Component) bool {
-        return mem.lessThan(u8, @typeName(lhs.Type), @typeName(rhs.Type));
+    fn fullStr(self: Component) []const u8 {
+        const pow_str = std.fmt.comptimePrint("{d}", .{self.power});
+        const name = @typeName(self.Type);
+        return name ++ "^" ++ pow_str;
     }
 };
 
-const Equation = struct {
+pub const Equation = struct {
+    /// must always be sorted by the `@typeName` of each component's `Type` field and
+    /// there must be no components with the same `Type` field
     components: []const Component,
 
     fn of(Type: type) Equation {
@@ -35,7 +39,46 @@ const Equation = struct {
         };
     }
 
+    /// checks if components are sorted and have no duplicate types
+    inline fn isValid(self: Equation) bool {
+        comptime {
+            if (self.components.len == 0) {
+                return true;
+            }
+            @setEvalBranchQuota(self.components.len * 500);
+            var prev: Component = self.components[0];
+            var prev_name: []const u8 = @typeName(prev.Type);
+            for (self.components[1..]) |comp| {
+                const cur_name = @typeName(comp.Type);
+                // always will be interned const string pointers so we can just compare the pointers
+
+                if (comp.Type == prev.Type or mem.lessThan(u8, cur_name, prev_name)) {
+                    return false;
+                }
+                prev = comp;
+                prev_name = cur_name;
+            }
+            return true;
+        }
+    }
+
     pub fn timesEqn(self: Equation, rhs: Equation) Equation {
+        if (!self.isValid() or !rhs.isValid()) {
+            @compileError(fmt.comptimePrint(
+                \\Attempted to multiply equations, but at least one was invalid. 
+                \\lhs: {full}
+                \\rhs: {full}
+                \\
+                \\Equations must always be sorted by the type name of the components. 
+                \\
+                \\Equations must also only have one component per type.
+                \\
+                \\If you encountered this error using the library normally, please submit a bug report. 
+            ,
+                .{ self, rhs },
+            ));
+        }
+
         // assume equations are sorted
         comptime var l = 0;
         comptime var r = 0;
@@ -58,7 +101,11 @@ const Equation = struct {
         } else if (r == rhs.components.len) {
             numComps += self.components.len - l;
         } else {
-            @compileError(fmt.comptimePrint("Failed to multiply equations: {} and {}", .{ self, rhs }));
+            @compileError(fmt.comptimePrint(
+                \\Failed to multiply equations, please submit a bug report: 
+                \\lhs: {full}
+                \\rhs: {full}
+            , .{ self, rhs }));
         }
 
         // make new components
@@ -92,11 +139,23 @@ const Equation = struct {
                 comps[idx] = comp;
             }
         } else {
-            @compileError(fmt.comptimePrint("Failed to multiply equations: {any} and {any}", .{ self, rhs }));
+            @compileError(fmt.comptimePrint(
+                \\Failed to multiply equations, please submit a bug report: 
+                \\lhs: {full}
+                \\rhs: {full}
+            , .{ self, rhs }));
         }
 
         const comps_final: [numComps]Component = comps;
-        return Equation{ .components = &comps_final };
+        const eqn = Equation{ .components = &comps_final };
+        const valid = eqn.isValid();
+        if (!valid) @compileError(fmt.comptimePrint(
+            \\Multiplying equations lhs*rhs = eqn resulted in an invalid equation, please submit a bug report
+            \\lhs: {full}
+            \\rhs: {full}
+            \\eqn: {full}
+        , .{ self, rhs, eqn }));
+        return eqn;
     }
 
     pub fn divEqn(self: Equation, rhs: Equation) Equation {
@@ -129,7 +188,7 @@ const Equation = struct {
         return self.pow(-2);
     }
 
-    pub fn fullStr(self: Equation) []const u8 {
+    pub fn str(self: Equation) []const u8 {
         if (self.components.len == 0) return "";
         comptime var eqn_str: []const u8 = self.components[0].str();
         comptime for (self.components[1..]) |comp| {
@@ -138,13 +197,78 @@ const Equation = struct {
         const eqn_str_const = eqn_str;
         return eqn_str_const;
     }
+
+    pub fn fullStr(self: Equation) []const u8 {
+        if (self.components.len == 0) return "";
+        comptime var eqn_str: []const u8 = self.components[0].fullStr();
+        comptime for (self.components[1..]) |comp| {
+            eqn_str = eqn_str ++ " * " ++ comp.fullStr();
+        };
+        const eqn_str_const = eqn_str;
+        return eqn_str_const;
+    }
+
+    pub fn format(
+        self: Equation,
+        comptime fmt_str: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = options; // ignore options
+
+        if (fmt_str.len == 0) {
+            try writer.print(self.str(), .{});
+        } else if (mem.eql(u8, fmt_str, "full")) {
+            try writer.print(self.fullStr(), .{});
+        } else {
+            return fmt.invalidFmtError(fmt_str, self);
+        }
+    }
 };
 
-pub const one = Equation{ .components = .{} };
+pub const one = Equation{ .components = &[_]Component{} };
+
+test "Equation.isValid" {
+    const Type1 = struct {};
+    const Type2 = struct {};
+    const Type3 = struct {};
+    const Type4 = struct {};
+    const Type5 = struct {};
+
+    // not sorted
+    const eqn1 = Equation{ .components = &[_]Component{
+        .{ .Type = Type2, .power = -2 },
+        .{ .Type = Type1, .power = 2 },
+        .{ .Type = Type3, .power = 3 },
+        .{ .Type = Type5, .power = 0 },
+    } };
+    // duplicates
+    const eqn2 = Equation{ .components = &[_]Component{
+        .{ .Type = Type1, .power = -2 },
+        .{ .Type = Type2, .power = -2 },
+        .{ .Type = Type2, .power = -2 },
+        .{ .Type = Type3, .power = 3 },
+        .{ .Type = Type4, .power = 1 },
+    } };
+    // not sorted and duplicates
+    const eqn3 = Equation{ .components = &[_]Component{
+        .{ .Type = Type1, .power = -2 },
+        .{ .Type = Type3, .power = 3 },
+        .{ .Type = Type2, .power = -2 },
+        .{ .Type = Type4, .power = 1 },
+        .{ .Type = Type2, .power = -2 },
+    } };
+
+    try std.testing.expect(!eqn1.isValid());
+    try std.testing.expect(!eqn2.isValid());
+    try std.testing.expect(!eqn3.isValid());
+}
 
 test "Equation.TimesEqn" {
     const Type1 = struct {};
-    const Type2 = struct {};
+    const Type2 = struct {
+        pub const name = "type2";
+    };
     const Type3 = struct {};
     const Type4 = struct {};
     const Type5 = struct {};
@@ -180,13 +304,16 @@ test "Equation.TimesEqn" {
         \\equation.test.Equation.TimesEqn.Type5^0
     );
 
+    try std.testing.expect(eqn1.isValid());
+    try std.testing.expect(eqn2.isValid());
+    try std.testing.expect(eqn3.isValid());
     try std.testing.expectEqualStrings(expected_eqn3.fullStr(), eqn3.fullStr());
     try std.testing.expectEqualStrings(expected_eqn3_str, eqn3.fullStr());
 }
 
 test "Equation.DivEqn" {
     const Type1 = struct {};
-    const Type2 = struct {};
+    const Type2 = struct {}; // TODO add name
     const Type3 = struct {};
     const Type4 = struct {};
     const Type5 = struct {};

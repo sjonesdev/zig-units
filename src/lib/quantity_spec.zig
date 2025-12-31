@@ -98,7 +98,15 @@ pub inline fn BaseQuantitySpec(name: []const u8, BaseDimension: type) type {
     return QuantitySpec(name, BaseDimension, eqn.one, QuantityCharacter.scalar);
 }
 
-test BaseQuantitySpec {}
+test BaseQuantitySpec {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    try std.testing.expect(!Test.isDimension());
+    try std.testing.expect(Test.Parent.isDimension());
+    try std.testing.expect(Test.Parent.isBase());
+    try std.testing.expectEqual(Test.character, QuantityCharacter.scalar);
+    try std.testing.expectEqual(Test.equation, eqn.one);
+}
 
 /// The parent should be a Dimension or Quantity
 ///
@@ -107,17 +115,6 @@ fn QuantitySpec(name_in: []const u8, ParentIn: type, equation_in: eqn.Equation, 
     // TODO validation that parent, equation, and character are valid
     const DimensionIn = if (ParentIn.isDimension()) ParentIn else ParentIn.Dimension;
 
-    if (equation_in) |eq| {
-        if (eq.len == 0) @compileError("Do not pass empty quantity component slice as equation");
-        if (eq.len == 1) @compileError("A single quantity component is not a valid equation, use a child quantity instead");
-        comptime var last = eq[0];
-        for (eq) |comp| {
-            if (mem.lessThan(u8, comp.Quantity.name, last.Quantity.name)) {
-                @compileError("Do not pass unsorted quantity component slice as equantion");
-            }
-            last = comp;
-        }
-    }
     return struct {
         const This = @This();
         // using @typeName won't work because it uses the name of the function (quantity spec), but

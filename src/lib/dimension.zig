@@ -95,37 +95,12 @@ fn Dimension(comptime components_in: []const DimensionComponent) type {
 /// This can be used to add custom dimensions (e.g. money), or encode semantics
 /// into an existing dimension to treat them as orthogonal.
 /// The symbol should be a unicode character.
-fn BaseDimension(comptime symbol: u21) type {
+pub fn BaseDimension(comptime symbol: u21) type {
     const dims: []const DimensionComponent = &[_]DimensionComponent{.{ symbol, 1 }};
     return Dimension(dims);
 }
 
-fn DimensionContainer(DimensionsIn: []type) type {
-    return struct {
-        const Dimensions = DimensionsIn;
-
-        pub fn AddDimensions(DimensionsToAppend: type) type {
-            return DimensionContainer(Dimensions ++ DimensionsToAppend);
-        }
-
-        pub fn AddDimension(DimensionIn: type) type {
-            return DimensionContainer(Dimensions ++ DimensionIn);
-        }
-    };
-}
-
 pub const One = Dimension(&[0]DimensionComponent{});
-
-// const DimensionsRegistry = DimensionContainer(.{
-//     Time,
-//     Length,
-//     Mass,
-//     Current,
-//     Temperature,
-//     Amount,
-//     Luminosity,
-//     Angle,
-// });
 
 test "Multiplying dimensions" {
     const should_be = Dimension(&[_]DimensionComponent{ .{ 'L', 1 }, .{ 'M', 1 } });

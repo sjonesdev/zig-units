@@ -11,37 +11,25 @@ pub inline fn isNumber(val: anytype) bool {
     return isNumberType(@TypeOf(val));
 }
 
-pub fn countNewlines(comptime str: []const u8) usize {
-    comptime {
-        var cnt = 0;
-        for (str) |ch| {
-            if (ch == '\n') cnt += 1;
-        }
-        return cnt;
+pub fn countNewlines(str: []const u8) usize {
+    @setEvalBranchQuota(str.len * 8);
+    var cnt = 0;
+    for (str) |ch| {
+        if (ch == '\n') cnt += 1;
     }
+    return cnt;
 }
 
-pub inline fn filterNewlines(comptime str: []const u8) []const u8 { //[(str.len - countNewlines(str))]u8 {
+pub inline fn filterNewlines(comptime str: []const u8) *const [str.len - countNewlines(str)]u8 {
     comptime {
-        var arr: [str.len - countNewlines(str)]u8 = undefined;
+        var buf: [str.len - countNewlines(str)]u8 = undefined;
         var i = 0;
         for (str) |ch| {
             if (ch == '\n') continue;
-            arr[i] = ch;
+            buf[i] = ch;
             i += 1;
         }
-        const arr_final = arr;
-        return &arr_final;
+        const final = buf;
+        return &final;
     }
-}
-
-pub fn typeNameOrFunction(T: type) []const u8 {
-    const name = @typeName(T);
-    var iter = std.mem.tokenizeAny(u8, name, "(");
-    return iter.peek() orelse iter.rest();
-}
-
-test typeNameOrFunction {
-    try std.testing.expectEqualSlices(u8, "f64", typeNameOrFunction(f64));
-    try std.testing.expectEqualSlices(u8, "bounded_array.BoundedArrayAligned", typeNameOrFunction(std.BoundedArray(u8, 128)));
 }
