@@ -27,7 +27,7 @@ pub fn KindOf(QuantitySpec: type) KindContainer {
     };
 }
 
-pub const One = Named("", "", KindContainer(qs.Dimensionless));
+pub const One = Named("", "", KindContainer(base.Dimensionless));
 
 /// way to describe how a unit of the same kind relates to another, for example an
 /// hour could be defined with Minute.Times(60), meaning an hour is

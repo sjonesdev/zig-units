@@ -12,9 +12,9 @@ pub const TrafficIntensity = qs.BaseQuantitySpec("traffic_intensity", DimTraffic
 pub const TrafficOfferedIntensity = qs.ChildQuantitySpec("traffic_offered_intensity", TrafficIntensity);
 pub const TrafficCarriedIntensity = qs.ChildQuantitySpec("traffic_carried_intensity", TrafficIntensity);
 pub const TrafficLoad = TrafficCarriedIntensity;
-pub const MeanQueueLength = qs.ChildQuantitySpec("mean_queue_length", qs.Dimensionless);
-pub const LossProbability = qs.ChildQuantitySpec("loss_probability", qs.Dimensionless);
-pub const WaitingProbability = qs.ChildQuantitySpec("waiting_probability", qs.Dimensionless);
+pub const MeanQueueLength = qs.ChildQuantitySpec("mean_queue_length", base.Dimensionless);
+pub const LossProbability = qs.ChildQuantitySpec("loss_probability", base.Dimensionless);
+pub const WaitingProbability = qs.ChildQuantitySpec("waiting_probability", base.Dimensionless);
 pub const CallIntensity = qs.DerivedQuantitySpec("call_intensity", base.Duration.Inverse());
 pub const CallingRate = CallIntensity;
 pub const CompletedCallIntensity = qs.ChildQuantitySpec("completed_call_intensity", CallIntensity);
@@ -34,11 +34,11 @@ pub const LineDigitRate = ModulationRate;
 pub const QuantizingDistortionPower = qs.DerivedQuantitySpec("quantizing_distortion_power", mc.Power);
 pub const CarrierPower = qs.DerivedQuantitySpec("carrier_power", mc.Power);
 pub const SignalEnergyPerBinaryDigit = qs.DerivedQuantitySpec("signal_energy_per_binary_digit", CarrierPower.Times(PeriodOfBinaryDigits));
-pub const ErrorProbability = qs.DerivedQuantitySpec("error_probability", qs.Dimensionless);
-pub const HammingDistance = qs.DerivedQuantitySpec("Hamming_distance", qs.Dimensionless);
+pub const ErrorProbability = qs.DerivedQuantitySpec("error_probability", base.Dimensionless);
+pub const HammingDistance = qs.DerivedQuantitySpec("Hamming_distance", base.Dimensionless);
 pub const ClockFrequency = qs.DerivedQuantitySpec("clock_frequency", si.Frequency);
 pub const ClockRate = ClockFrequency;
-pub const DecisionContent = qs.DerivedQuantitySpec("decision_content", qs.Dimensionless);
+pub const DecisionContent = qs.DerivedQuantitySpec("decision_content", base.Dimensionless);
 
 // TODO how to model InformationContent and the following quantities???
 // pub const InformationContent = qs.DerivedQuantitySpec("information content", ...);

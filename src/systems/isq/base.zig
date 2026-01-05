@@ -11,6 +11,7 @@ pub const DimAmount = dim.BaseDimension('N'); // TODO should this be AmountOfSub
 pub const DimLuminosity = dim.BaseDimension('J'); // TODO should this be LuminousIntensity?
 pub const DimAngle = dim.BaseDimension('R'); // TODO move this to angular system?
 
+pub const Dimensionless = qs.BaseQuantitySpec("one", dim.One);
 pub const Time = qs.BaseQuantitySpec("time", DimTime);
 pub const Duration = Time;
 pub const Length = qs.BaseQuantitySpec("length", DimLength);

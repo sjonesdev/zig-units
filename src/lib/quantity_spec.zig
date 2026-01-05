@@ -3,9 +3,7 @@ const std = @import("std");
 const mem = std.mem;
 const fmt = std.fmt;
 const eqn = @import("equation.zig");
-
-// TODO should this be in base?
-pub const Dimensionless = BaseQuantitySpec("one", dim.One);
+const util = @import("util.zig");
 
 pub const QuantityCharacter = enum {
     scalar, // TODO rename to real_scalar?
@@ -14,87 +12,154 @@ pub const QuantityCharacter = enum {
     tensor,
 };
 
+fn validateNonBaseParent(Parent: type) void {
+    if (!@hasDecl(Parent, "isDimension") or Parent.isDimension()) @compileError("Parent of non-base `QuantitySpec` must be a `QuantitySpec`");
+}
+
 /// Child quantity specs are those that are not root nodes in a quantity tree of a kind
 ///
 /// The parent represents the node in the quantity hierarchy this quantity inherits from
-pub inline fn ChildQuantitySpec(name: []const u8, Parent: type) type {
+pub fn ChildQuantitySpec(name: []const u8, Parent: type) type {
+    validateNonBaseParent(Parent);
     return QuantitySpec(name, Parent, Parent.equation, Parent.character);
 }
 
-test ChildQuantitySpec {}
+test ChildQuantitySpec {
+    const ExampleDimension = dim.BaseDimension('E');
+    const TestBase = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    const Test = ChildQuantitySpec("example child", TestBase);
+    try std.testing.expect(!Test.isDimension());
+    try std.testing.expectEqual(TestBase, Test.Parent);
+    try std.testing.expectEqual(Test.character, QuantityCharacter.scalar);
+    try eqn.Equation.expectEqual(eqn.one, Test.equation);
+    try std.testing.expectEqualStrings(Test.name, "example child");
+}
 
 /// Child quantity specs are those that are not root nodes in a quantity tree of a kind
 ///
 /// The parent represents the node in the quantity hierarchy this quantity inherits from,
 /// while the equation denotes the formulation of this quantity
-pub inline fn ChildQuantitySpecWithEquation(name: []const u8, Parent: type, equation: eqn.Equation) type {
-    // TODO validate equation
+pub fn ChildQuantitySpecWithEquation(name: []const u8, Parent: type, equation: eqn.Equation) type {
+    validateNonBaseParent(Parent);
     return QuantitySpec(name, Parent, equation, Parent.character);
 }
 
-test ChildQuantitySpecWithEquation {}
+test ChildQuantitySpecWithEquation {
+    const ExampleDimension = dim.BaseDimension('E');
+    const TestBase = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    const TestBaseSquared = DerivedQuantitySpec("example quantity spec squared", TestBase.times(TestBase));
+    const Test = ChildQuantitySpecWithEquation("example child with eqn", TestBase, TestBaseSquared.equation.div(TestBase));
+    try std.testing.expect(!Test.isDimension());
+    try std.testing.expectEqual(TestBase, Test.Parent);
+    try std.testing.expectEqual(Test.character, QuantityCharacter.scalar);
+    try eqn.Equation.expectEqual(eqn.one.times(TestBase), Test.equation);
+    try std.testing.expectEqualStrings(Test.name, "example child with eqn");
+}
 
 /// Child quantity specs are those that are not root nodes in a quantity tree of a kind
 ///
 /// The parent represents the node in the quantity hierarchy this quantity inherits from
-pub inline fn ChildQuantitySpecOfCharacter(name: []const u8, Parent: type, character: QuantityCharacter) type {
+pub fn ChildQuantitySpecOfCharacter(name: []const u8, Parent: type, character: QuantityCharacter) type {
+    validateNonBaseParent(Parent);
     return QuantitySpec(name, Parent, Parent.equation, character);
 }
 
-test ChildQuantitySpecOfCharacter {}
+test ChildQuantitySpecOfCharacter {
+    const ExampleDimension = dim.BaseDimension('E');
+    const TestBase = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    const Test = ChildQuantitySpecOfCharacter("example child with char", TestBase, QuantityCharacter.complexScalar);
+    try std.testing.expect(!Test.isDimension());
+    try std.testing.expectEqual(TestBase, Test.Parent);
+    try std.testing.expectEqual(Test.character, QuantityCharacter.complexScalar);
+    try eqn.Equation.expectEqual(eqn.one, Test.equation);
+    try std.testing.expectEqualStrings(Test.name, "example child with char");
+}
 
 /// Child quantity specs are those that are not root nodes in a quantity tree of a kind
 ///
 /// The parent represents the node in the quantity hierarchy this quantity inherits from,
 /// while the equation denotes the formulation of this quantity
 pub inline fn ChildQuantitySpecWithEquationOfCharacter(name: []const u8, Parent: type, equation: eqn.Equation, character: QuantityCharacter) type {
-    // TODO validate equation
+    validateNonBaseParent(Parent);
     return QuantitySpec(name, Parent, equation, character);
 }
 
-test ChildQuantitySpecWithEquationOfCharacter {}
+test ChildQuantitySpecWithEquationOfCharacter {
+    const ExampleDimension = dim.BaseDimension('E');
+    const TestBase = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    const TestBaseSquared = DerivedQuantitySpec("example quantity spec squared", TestBase.times(TestBase));
+    const Test = ChildQuantitySpecWithEquationOfCharacter(
+        "example child with eqn",
+        TestBase,
+        TestBaseSquared.equation.div(TestBase),
+        QuantityCharacter.vector,
+    );
+    try std.testing.expect(!Test.isDimension());
+    try std.testing.expectEqual(TestBase, Test.Parent);
+    try std.testing.expectEqual(Test.character, QuantityCharacter.vector);
+    try eqn.Equation.expectEqual(eqn.one, Test.equation);
+    try std.testing.expectEqualStrings(Test.name, "example child with eqn");
+}
 
 /// Derived quantity specs become root nodes in a new quantity tree/hierarchy of a kind
-pub inline fn DerivedQuantitySpec(name: []const u8, equation: eqn.Equation) type {
+pub fn DerivedQuantitySpec(name: []const u8, equation: eqn.Equation) type {
     comptime var Dimension = dim.One;
-    for (equation) |comp| {
-        if (comp.power > 0) {
+    inline for (equation.components) |comp| {
+        if (comp.power >= 0) {
             for (0..comp.power) |_| {
-                Dimension = Dimension.MultipliedBy(comp.Quantity.Dimension);
+                Dimension = Dimension.MultipliedBy(comp.Type.Dimension);
             }
         } else {
             for (0..@abs(comp.power)) |_| {
-                Dimension = Dimension.DividedBy(comp.Quantity.Dimension);
+                Dimension = Dimension.DividedBy(comp.Type.Dimension);
             }
         }
     }
-    // TODO quantity character
-    return QuantitySpec(name, Dimension, equation);
+    return QuantitySpec(name, Dimension, equation, QuantityCharacter.scalar);
 }
 
-test DerivedQuantitySpec {}
+test DerivedQuantitySpec {
+    const ExampleDimension = dim.BaseDimension('E');
+    const TestBase = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    const Test = DerivedQuantitySpec("example child", TestBase.div(TestBase));
+    try std.testing.expect(!Test.isDimension());
+    try std.testing.expectEqual(dim.One, Test.Parent);
+    try std.testing.expectEqual(Test.character, QuantityCharacter.scalar);
+    try eqn.Equation.expectEqual(eqn.one.times(TestBase).pow(0), Test.equation);
+    try std.testing.expectEqualStrings(Test.name, "example child");
+}
 
 /// Derived quantity specs become root nodes in a new quantity tree/hierarchy of a kind
-pub inline fn DerivedQuantitySpecOfCharacter(name: []const u8, equation: eqn.Equation, character: QuantityCharacter) type {
+pub fn DerivedQuantitySpecOfCharacter(name: []const u8, equation: eqn.Equation, character: QuantityCharacter) type {
     comptime var Dimension = dim.One;
-    for (equation) |comp| {
-        if (comp.power > 0) {
+    inline for (equation.components) |comp| {
+        if (comp.power >= 0) {
             for (0..comp.power) |_| {
-                Dimension = Dimension.MultipliedBy(comp.Quantity.Dimension);
+                Dimension = Dimension.MultipliedBy(comp.Type.Dimension);
             }
         } else {
             for (0..@abs(comp.power)) |_| {
-                Dimension = Dimension.DividedBy(comp.Quantity.Dimension);
+                Dimension = Dimension.DividedBy(comp.Type.Dimension);
             }
         }
     }
     return QuantitySpec(name, Dimension, equation, character);
 }
 
-test DerivedQuantitySpecOfCharacter {}
+test DerivedQuantitySpecOfCharacter {
+    const ExampleDimension = dim.BaseDimension('E');
+    const TestBase = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    const Test = DerivedQuantitySpec("example child", TestBase.div(TestBase));
+    try std.testing.expect(!Test.isDimension());
+    try std.testing.expectEqual(dim.One, Test.Parent);
+    try std.testing.expectEqual(Test.character, QuantityCharacter.scalar);
+    try eqn.Equation.expectEqual(eqn.one.times(TestBase).pow(0), Test.equation);
+    try std.testing.expectEqualStrings(Test.name, "example child");
+}
 
 /// Base quantity specs are root nodes in a quantity tree/hierarchy, also known as "kinds"
 pub inline fn BaseQuantitySpec(name: []const u8, BaseDimension: type) type {
+    if (!@hasDecl(BaseDimension, "isDimension") or !BaseDimension.isDimension()) @compileError("Parent of base `QuantitySpec` must be a `Dimension`");
     return QuantitySpec(name, BaseDimension, eqn.one, QuantityCharacter.scalar);
 }
 
@@ -102,10 +167,10 @@ test BaseQuantitySpec {
     const ExampleDimension = dim.BaseDimension('E');
     const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
     try std.testing.expect(!Test.isDimension());
-    try std.testing.expect(Test.Parent.isDimension());
-    try std.testing.expect(Test.Parent.isBase());
+    try std.testing.expectEqual(ExampleDimension, Test.Parent);
     try std.testing.expectEqual(Test.character, QuantityCharacter.scalar);
-    try std.testing.expectEqual(Test.equation, eqn.one);
+    try eqn.Equation.expectEqual(eqn.one, Test.equation);
+    try std.testing.expectEqualStrings(Test.name, "example quantity spec");
 }
 
 /// The parent should be a Dimension or Quantity
@@ -160,30 +225,57 @@ fn QuantitySpec(name_in: []const u8, ParentIn: type, equation_in: eqn.Equation, 
     };
 }
 
-test "QuantitySpec multiplication doesn't compose their derivations" {}
+test "QuantitySpec.isDimension" {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    try std.testing.expect(!Test.isDimension());
+}
 
-test "QuantitySpec.isDimension" {}
+test "QuantitySpec.pow" {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    try eqn.Equation.expectEqual(eqn.one.times(Test).pow(3), Test.pow(3));
+}
 
-test "QuantitySpec.pow" {}
+test "QuantitySpec.inverse" {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    try eqn.Equation.expectEqual(eqn.one.times(Test).pow(-1), Test.inverse());
+}
 
-test "QuantitySpec.inverse" {}
+test "QuantitySpec.sqrt" {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    try eqn.Equation.expectEqual(eqn.one.times(Test).pow(-2), Test.sqrt());
+}
 
-test "QuantitySpec.sqrt" {}
+test "QuantitySpec.times" {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    try eqn.Equation.expectEqual(eqn.one.times(Test).pow(2), Test.times(Test));
+}
 
-test "QuantitySpec.times" {}
+test "QuantitySpec.timesEqn" {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    try eqn.Equation.expectEqual(eqn.one.times(Test).pow(2), Test.timesEqn(Test.pow(1)));
+}
 
-test "QuantitySpec.timesEqn" {}
+test "QuantitySpec.div" {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    try eqn.Equation.expectEqual(eqn.one.times(Test).pow(0), Test.div(Test));
+}
 
-test "QuantitySpec.div" {}
+test "QuantitySpec.divEqn" {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    try eqn.Equation.expectEqual(eqn.one.times(Test).pow(0), Test.divEqn(Test.pow(1)));
+}
 
-test "QuantitySpec.divEqn" {}
-
-// When we say hierarchy, we mean hierarchy tree of quantities of the same kind, but that's a mouth (hand?) full
-// All quantities have a character, e.g. scalar, vector, tensor. Scalar is the default
-// Base Quantity - quantity from a dimension, creates a new hierarchy
-// Child Quantity - quantity as a child node of another quantity in the hierarchy
-// Derived Quantity - quantity derived from a combination of other quantities, creates a new hierarchy
-// Child Derived Quantity - quantity as a child node of another quantity in the hierarchy derived from a combination of other quantities
-//
-
-// maybe let users add custom semantics to quantities themselves? or provide specializations of units that are functionally identical but provide an additional layer of semantic verification (or at least printing)
+test "QuantitySpec multiplication doesn't compose their derivations" {
+    const ExampleDimension = dim.BaseDimension('E');
+    const Test = BaseQuantitySpec("example quantity spec", ExampleDimension);
+    const Test2 = DerivedQuantitySpec("example quantity spec 2", Test.pow(1));
+    try eqn.Equation.expectEqual(eqn.one.times(Test2).pow(2), Test2.times(Test2));
+}

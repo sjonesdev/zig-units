@@ -6,7 +6,7 @@ const si = @import("si_quantities.zig");
 const st = @import("space_and_time.zig");
 
 pub const SpeedOfLightInAMedium = qs.ChildQuantitySpec("speed of light in a medium", st.Speed);
-pub const RefractiveIndex = qs.ChildQuantitySpecWithEquation("refractive index", qs.Dimensionless, em.SpeedOfLightInVacuum.Div(SpeedOfLightInAMedium));
+pub const RefractiveIndex = qs.ChildQuantitySpecWithEquation("refractive index", base.Dimensionless, em.SpeedOfLightInVacuum.Div(SpeedOfLightInAMedium));
 pub const RadiantEnergy = qs.ChildQuantitySpec("radiant energy", si.Energy);
 pub const SpectralRadiantEnergy = qs.DerivedQuantitySpec("spectral radiant energy", RadiantEnergy.Div(st.Wavelength));
 pub const RadiantEnergyDensity = qs.DerivedQuantitySpec("radiant energy density", RadiantEnergy.Div(st.Volume));

@@ -48,7 +48,7 @@ pub const AngularVelocity = qs.DerivedQuantitySpecOfCharacter(
 );
 pub const AngularAcceleration = qs.DerivedQuantitySpec("angular acceleration", AngularVelocity.Div(base.Duration));
 pub const TimeConstant = qs.ChildQuantitySpec("time constant", base.Duration);
-pub const Rotation = qs.BaseQuantitySpec("rotation", qs.Dimensionless);
+pub const Rotation = qs.BaseQuantitySpec("rotation", base.Dimensionless);
 pub const RotationFrequency = qs.DerivedQuantitySpec("rotational frequency", Rotation.Div(base.Duration));
 pub const AngularFrequency = qs.DerivedQuantitySpec("angular frequency", PhaseAngle.Div(base.Duration));
 pub const Wavelength = qs.ChildQuantitySpec("wavelength", base.Length);
@@ -66,7 +66,7 @@ pub const GroupSpeed = qs.DerivedQuantitySpec("group speed", AngularFrequency.Di
 pub const DampingCoefficient = qs.DerivedQuantitySpec("damping coefficient", TimeConstant.Inverse());
 pub const LogarithmicDecrement = qs.ChildQuantitySpecWithEquation(
     "logarithmic decrement",
-    qs.Dimensionless,
+    base.Dimensionless,
     DampingCoefficient.Div(si.PeriodDuration),
 );
 pub const Attenuation = qs.DerivedQuantitySpec("attenuation", Distance.Inverse());

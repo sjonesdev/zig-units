@@ -40,7 +40,7 @@ pub const Equation = struct {
     }
 
     /// checks if components are sorted and have no duplicate types
-    inline fn isValid(self: Equation) bool {
+    fn isValid(self: Equation) bool {
         comptime {
             if (self.components.len == 0) {
                 return true;
@@ -60,6 +60,26 @@ pub const Equation = struct {
             }
             return true;
         }
+    }
+
+    pub fn eql(self: Equation, rhs: Equation) bool {
+        if (self.components.len != rhs.components.len) {
+            @compileLog("len neq");
+            return false;
+        }
+        inline for (self.components, 0..) |lhs_comp, i| {
+            const rhs_comp = rhs.components[i];
+            if (lhs_comp.Type != rhs_comp.Type) {
+                @compileLog("type neq");
+                return false;
+            }
+            if (lhs_comp.power != rhs_comp.power) {
+                @compileLog("pow neq");
+                return false;
+            }
+            // if (lhs_comp.Type != rhs_comp.Type or lhs_comp.power != rhs_comp.power) return false;
+        }
+        return true;
     }
 
     pub fn timesEqn(self: Equation, rhs: Equation) Equation {
@@ -217,12 +237,19 @@ pub const Equation = struct {
         _ = options; // ignore options
 
         if (fmt_str.len == 0) {
-            try writer.print(self.str(), .{});
-        } else if (mem.eql(u8, fmt_str, "full")) {
-            try writer.print(self.fullStr(), .{});
+            try writer.print("{s}", .{self.str()});
+        } else if (comptime mem.eql(u8, fmt_str, "full")) {
+            try writer.print("{s}", .{self.fullStr()});
         } else {
             return fmt.invalidFmtError(fmt_str, self);
         }
+    }
+
+    pub fn expectEqual(expected: Equation, actual: Equation) !void {
+        std.testing.expect(expected.eql(actual)) catch |e| {
+            std.debug.print("expected {}, found {}", .{ expected, actual });
+            return e;
+        };
     }
 };
 
